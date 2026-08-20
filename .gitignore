@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+
+# 运行时数据与密钥
+data/
+.env
+.env.local
+
+# 设计文档（本地保留，不推送到 GitHub）
+docs/
+
+# 系统文件
+.DS_Store
+.idea/
+.vscode/
