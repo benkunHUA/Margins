@@ -10,6 +10,7 @@ venv/
 # Node
 node_modules/
 dist/
+.pnpm-store/
 
 # 运行时数据与密钥
 data/
