@@ -41,11 +41,13 @@ uvicorn app.main:app --reload --port 8000
 
 ```bash
 cd frontend
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 访问 http://localhost:5173，前端已将 `/api` 代理到 http://localhost:8000。
+
+> 前端依赖由 pnpm 管理（版本见 `frontend/package.json` 的 `packageManager`），首次使用可执行 `corepack enable`。
 
 ### 方式二：Docker Compose
 

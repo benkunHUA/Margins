@@ -2,11 +2,13 @@ FROM node:22-alpine AS build
 
 WORKDIR /app
 
+ENV COREPACK_HOME=/usr/local/share/pnpm-store
+
 COPY package.json ./
-RUN npm install --no-audit --no-fund
+RUN corepack enable && pnpm install --frozen-lockfile
 
 COPY . .
-RUN npm run build
+RUN pnpm build
 
 FROM nginx:alpine
 

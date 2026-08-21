@@ -5,8 +5,8 @@ React 19 + TypeScript + Vite + Tailwind CSS 4 构建的知识库 Web 界面。
 ## 开发
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 开发服务器默认运行在 http://localhost:5173，`/api` 已代理到 http://localhost:8000。
@@ -14,10 +14,12 @@ npm run dev
 ## 构建
 
 ```bash
-npm run build
+pnpm build
 ```
 
 产物输出到 `dist/`。
+
+依赖由 pnpm 管理（`package.json` 中通过 `packageManager` 固定版本），首次使用可执行 `corepack enable` 启用 pnpm。
 
 ## 目录
 
