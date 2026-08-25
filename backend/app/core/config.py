@@ -13,8 +13,22 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class StorageConfig(BaseModel):
     data_dir: Path = Path("./data")
-    upload_dir: Path = Path("./data/uploads")
-    faiss_index_dir: Path = Path("./data/faiss_index")
+
+    @property
+    def upload_dir(self) -> Path:
+        return self.data_dir / "uploads"
+
+    @property
+    def faiss_index_dir(self) -> Path:
+        return self.data_dir / "faiss_index"
+
+    @property
+    def parsed_dir(self) -> Path:
+        return self.data_dir / "parsed"
+
+    @property
+    def db_path(self) -> Path:
+        return self.data_dir / "margins.db"
 
 
 class ModelConfig(BaseModel):
