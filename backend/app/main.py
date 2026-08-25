@@ -16,10 +16,13 @@ from app.core.container import ServiceContainer
 from app.core.logging import setup_logging
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    container: ServiceContainer | None = None,
+) -> FastAPI:
     settings = settings or Settings()
     setup_logging(settings.log_level)
-    container = ServiceContainer(settings)
+    container = container or ServiceContainer(settings)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
