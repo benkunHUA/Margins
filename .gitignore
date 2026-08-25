@@ -24,3 +24,6 @@ docs/
 .DS_Store
 .idea/
 .vscode/
+
+# git 工作区（实施计划执行用）
+.worktrees/
