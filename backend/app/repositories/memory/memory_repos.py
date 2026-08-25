@@ -133,9 +133,11 @@ class InMemorySessionRepository(SessionRepository):
 class InMemoryParseJobRepository(ParseJobRepository):
     def __init__(self) -> None:
         self._items: dict[UUID, ParseJob] = {}
+        self._order: list[UUID] = []
 
     async def create(self, job: ParseJob) -> ParseJob:
         self._items[job.id] = job
+        self._order.append(job.id)
         return job
 
     async def update(self, job: ParseJob) -> ParseJob:
@@ -144,3 +146,10 @@ class InMemoryParseJobRepository(ParseJobRepository):
 
     async def get(self, job_id: UUID) -> ParseJob | None:
         return self._items.get(job_id)
+
+    async def get_by_document(self, doc_id: UUID) -> ParseJob | None:
+        for job_id in reversed(self._order):
+            job = self._items.get(job_id)
+            if job is not None and job.document_id == doc_id:
+                return job
+        return None

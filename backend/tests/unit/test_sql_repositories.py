@@ -1,0 +1,86 @@
+"""SQL 仓储实现测试（临时 SQLite 文件库）。"""
+
+from uuid import uuid4
+
+import pytest
+
+from app.domain.entities import Chunk, Document, ParseJob
+from app.domain.enums import DocumentStatus, ParseJobStatus
+from app.repositories.sql.chunks import ChunkSqlRepository
+from app.repositories.sql.database import create_engine_and_sessionmaker, init_db
+from app.repositories.sql.documents import DocumentSqlRepository
+from app.repositories.sql.sessions import ParseJobSqlRepository
+
+
+@pytest.fixture
+async def repos(tmp_path):
+    engine, session_factory = create_engine_and_sessionmaker(tmp_path)
+    await init_db(engine)
+    yield (
+        DocumentSqlRepository(session_factory),
+        ChunkSqlRepository(session_factory),
+        ParseJobSqlRepository(session_factory),
+    )
+    await engine.dispose()
+
+
+def _doc(**overrides) -> Document:
+    defaults = dict(
+        filename="a.pdf",
+        file_type="pdf",
+        file_size=10,
+        file_path=__file__,
+    )
+    return Document(**defaults, **overrides)
+
+
+async def test_document_crud_and_filter(repos) -> None:
+    documents, _, _ = repos
+    d1 = await documents.create(_doc())
+    await documents.create(_doc(status=DocumentStatus.READY))
+
+    assert (await documents.get(d1.id)) is not None
+    page = await documents.list(page=1, page_size=10, status=DocumentStatus.PENDING)
+    assert [item.id for item in page.items] == [d1.id]
+
+    page = await documents.list(page=1, page_size=10, q="a.pdf")
+    assert page.total == 2
+    assert page.page == 1
+
+    d1.status = DocumentStatus.FAILED
+    await documents.update(d1)
+    assert (await documents.get(d1.id)).status == DocumentStatus.FAILED
+
+    await documents.delete(d1.id)
+    assert await documents.get(d1.id) is None
+    assert len(await documents.list_all()) == 1
+
+
+async def test_chunk_repository(repos) -> None:
+    documents, chunks, _ = repos
+    doc_id = uuid4()
+    await documents.create(_doc(id=doc_id))
+    c1 = Chunk(id=uuid4(), document_id=doc_id, chunk_index=0, content="a")
+    c2 = Chunk(id=uuid4(), document_id=doc_id, chunk_index=1, content="b")
+    await chunks.add_many([c1, c2])
+
+    assert [c.id for c in await chunks.list_by_document(doc_id)] == [c1.id, c2.id]
+    assert [c.id for c in await chunks.get_many([c1.id, c2.id])] == [c1.id, c2.id]
+
+    await chunks.delete_by_document(doc_id)
+    assert await chunks.list_by_document(doc_id) == []
+    assert await chunks.list_all() == []
+
+
+async def test_parse_job_repository_latest_by_document(repos) -> None:
+    _, _, jobs = repos
+    doc_id = uuid4()
+    await jobs.create(ParseJob(document_id=doc_id))
+    j2 = await jobs.create(ParseJob(document_id=doc_id))
+
+    latest = await jobs.get_by_document(doc_id)
+    assert latest.id == j2.id
+
+    j2.status = ParseJobStatus.RUNNING
+    await jobs.update(j2)
+    assert (await jobs.get(j2.id)).status == ParseJobStatus.RUNNING

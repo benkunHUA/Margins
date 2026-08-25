@@ -93,3 +93,6 @@ class ParseJobRepository(ABC):
 
     @abstractmethod
     async def get(self, job_id: UUID) -> ParseJob | None: ...
+
+    @abstractmethod
+    async def get_by_document(self, doc_id: UUID) -> ParseJob | None: ...
