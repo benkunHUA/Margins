@@ -1,13 +1,22 @@
 """文档生命周期服务。"""
 
+import asyncio
 from collections.abc import Sequence
-from uuid import UUID
+from datetime import UTC, datetime
+from pathlib import Path
+from uuid import UUID, uuid4
 
+import aiofiles
 from fastapi import UploadFile
 
 from app.core.config import Settings
-from app.core.exceptions import DocumentNotFoundError, NotImplementedStageError
-from app.domain.entities import Document, Page
+from app.core.constants import MAX_FILE_SIZE_BYTES, SUPPORTED_FILE_TYPES
+from app.core.exceptions import (
+    DocumentNotFoundError,
+    FileTooLargeError,
+    InvalidFileTypeError,
+)
+from app.domain.entities import Document, Page, ParseJob
 from app.domain.enums import DocumentStatus
 from app.repositories.base import (
     ChunkRepository,
@@ -27,6 +36,7 @@ class DocumentService:
         sparse: SparseIndex,
         parse_queue,
         settings: Settings,
+        max_file_size_bytes: int = MAX_FILE_SIZE_BYTES,
     ) -> None:
         self._documents = documents
         self._chunks = chunks
@@ -35,10 +45,44 @@ class DocumentService:
         self._sparse = sparse
         self._parse_queue = parse_queue
         self._settings = settings
+        self._max_file_size_bytes = max_file_size_bytes
 
     async def upload(self, files: Sequence[UploadFile]) -> list[dict]:
-        """M1 落地：校验 → 落盘 → 建 Document(pending) + ParseJob(queued) → 入队。"""
-        raise NotImplementedStageError("M1: 上传与解析任务")
+        results: list[dict] = []
+        for file in files:
+            filename = file.filename or "unnamed"
+            ext = Path(filename).suffix.lower().lstrip(".")
+            if ext not in SUPPORTED_FILE_TYPES:
+                raise InvalidFileTypeError(f"不支持的文件类型: {ext}")
+
+            content = await file.read()
+            if len(content) > self._max_file_size_bytes:
+                raise FileTooLargeError(f"文件超过大小上限: {filename}")
+
+            doc_id = uuid4()
+            upload_dir = self._settings.storage.upload_dir
+            await asyncio.to_thread(upload_dir.mkdir, parents=True, exist_ok=True)
+            dest = upload_dir / f"{doc_id}.{ext}"
+            async with aiofiles.open(dest, "wb") as f:
+                await f.write(content)
+
+            now = datetime.now(UTC)
+            doc = Document(
+                id=doc_id,
+                filename=filename,
+                file_type=ext,
+                file_size=len(content),
+                file_path=dest,
+                created_at=now,
+                updated_at=now,
+            )
+            await self._documents.create(doc)
+            await self._jobs.create(ParseJob(document_id=doc.id, queued_at=now))
+            await self._parse_queue.put(doc.id)
+            results.append(
+                {"document_id": doc.id, "filename": doc.filename, "status": doc.status.value}
+            )
+        return results
 
     async def list(
         self,
@@ -57,10 +101,30 @@ class DocumentService:
         return doc
 
     async def delete(self, doc_id: UUID) -> None:
-        await self.get(doc_id)
+        doc = await self.get(doc_id)
         await self._documents.delete(doc_id)
         await self._chunks.delete_by_document(doc_id)
-        # M1: 删除后触发 vector/sparse rebuild 收敛索引
+        for path in (doc.file_path, doc.markdown_path):
+            if path is not None:
+                await asyncio.to_thread(_safe_unlink, path)
+        remaining = await self._chunks.list_all()
+        await self._vector.rebuild(remaining)
+        # M3: 同步 sparse.rebuild
 
     async def reparse(self, doc_id: UUID) -> dict:
-        raise NotImplementedStageError("M1: 重新解析")
+        doc = await self.get(doc_id)
+        now = datetime.now(UTC)
+        doc.status = DocumentStatus.PENDING
+        doc.parse_error = None
+        doc.updated_at = now
+        await self._documents.update(doc)
+        job = await self._jobs.create(ParseJob(document_id=doc.id, queued_at=now))
+        await self._parse_queue.put(doc.id)
+        return {"job_id": str(job.id), "status": job.status.value}
+
+
+def _safe_unlink(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
