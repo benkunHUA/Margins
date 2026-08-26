@@ -4,7 +4,12 @@ from pathlib import Path
 
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from app.repositories.sql.models import Base
 
