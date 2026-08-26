@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Copy, FileText, ListTree, RefreshCw, X } from "lucide-react";
+import { ChevronRight, Copy, FileText, ListTree, RefreshCw, X } from "lucide-react";
 
 import MarkdownViewer from "@/components/MarkdownViewer";
 import {
@@ -23,6 +23,15 @@ const statusClass: Record<DocumentStatus, string> = {
   ready: "bg-emerald-100 text-emerald-700",
   failed: "bg-red-100 text-red-700",
 };
+
+function previewContent(content: string, max = 60): string {
+  const firstLine = content
+    .split("\n")
+    .map((line) => line.replace(/^[#>*`\-=\s]+/, "").trim())
+    .find((line) => line.length > 0);
+  if (!firstLine) return "（空内容）";
+  return firstLine.length > max ? `${firstLine.slice(0, max)}…` : firstLine;
+}
 
 interface DocumentDrawerProps {
   documentId: string | null;
@@ -204,14 +213,25 @@ export default function DocumentDrawer({ documentId, onClose }: DocumentDrawerPr
                       onClick={() => toggleExpanded(chunk.id)}
                       className="flex w-full items-center justify-between gap-3 bg-slate-50 px-3 py-2 text-left hover:bg-slate-100"
                     >
-                      <span className="min-w-0 truncate text-sm font-medium text-slate-700">
-                        <span className="mr-2 text-slate-400">#{chunk.chunk_index}</span>
-                        {chunk.heading_path || "（无章节）"}
+                      <span className="flex min-w-0 items-center gap-2 text-sm">
+                        <ChevronRight
+                          className={cn(
+                            "size-4 shrink-0 text-slate-400 transition-transform",
+                            expanded.has(chunk.id) && "rotate-90",
+                          )}
+                        />
+                        <span className="shrink-0 text-slate-400">#{chunk.chunk_index}</span>
+                        <span className="min-w-0 truncate font-medium text-slate-700">
+                          {chunk.heading_path || "（无章节）"}
+                        </span>
                       </span>
                       <span className="shrink-0 text-xs text-slate-400">
                         {chunk.token_count ?? "-"} tokens
                       </span>
                     </button>
+                    <p className="line-clamp-1 border-t border-slate-100 px-3 py-1.5 text-xs text-slate-400">
+                      {previewContent(chunk.content)}
+                    </p>
                     {expanded.has(chunk.id) && (
                       <pre className="max-h-72 overflow-y-auto whitespace-pre-wrap px-3 py-2 text-xs text-slate-600">
                         {chunk.content}
