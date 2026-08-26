@@ -29,3 +29,14 @@ class DocumentOut(BaseModel):
 
 class DocumentDetail(DocumentOut):
     markdown: str | None = None
+
+
+class ChunkOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    chunk_index: int
+    content: str
+    heading_path: str | None = None
+    token_count: int | None = None
+    page: int | None = None

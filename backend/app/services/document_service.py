@@ -1,5 +1,7 @@
 """文档生命周期服务。"""
 
+from __future__ import annotations
+
 import asyncio
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -16,7 +18,7 @@ from app.core.exceptions import (
     FileTooLargeError,
     InvalidFileTypeError,
 )
-from app.domain.entities import Document, Page, ParseJob
+from app.domain.entities import Chunk, Document, Page, ParseJob
 from app.domain.enums import DocumentStatus
 from app.repositories.base import (
     ChunkRepository,
@@ -99,6 +101,10 @@ class DocumentService:
         if doc is None:
             raise DocumentNotFoundError(f"文档不存在: {doc_id}")
         return doc
+
+    async def list_chunks(self, doc_id: UUID) -> list[Chunk]:
+        await self.get(doc_id)
+        return await self._chunks.list_by_document(doc_id)
 
     async def delete(self, doc_id: UUID) -> None:
         doc = await self.get(doc_id)

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import Response
 
 from app.api.dependencies import get_document_service
-from app.api.schemas.documents import DocumentDetail, DocumentOut, UploadResult
+from app.api.schemas.documents import ChunkOut, DocumentDetail, DocumentOut, UploadResult
 from app.domain.entities import Page
 from app.domain.enums import DocumentStatus
 from app.services.document_service import DocumentService
@@ -54,6 +54,15 @@ async def get_document(
     detail = DocumentDetail.model_validate(doc)
     detail.markdown = markdown
     return detail
+
+
+@router.get("/{document_id}/chunks", response_model=list[ChunkOut])
+async def list_document_chunks(
+    document_id: UUID,
+    service: DocumentService = Depends(get_document_service),
+) -> list[ChunkOut]:
+    chunks = await service.list_chunks(document_id)
+    return [ChunkOut.model_validate(chunk) for chunk in chunks]
 
 
 @router.delete("/{document_id}", status_code=204)
