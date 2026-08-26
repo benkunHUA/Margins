@@ -1,8 +1,8 @@
-import { Trash2 } from "lucide-react";
+import { Eye, Trash2 } from "lucide-react";
 
 import { useDeleteDocument, useDocuments } from "@/hooks/useDocuments";
 import { cn } from "@/lib/utils";
-import type { DocumentStatus } from "@/types";
+import type { DocumentItem, DocumentStatus } from "@/types";
 
 const statusLabel: Record<DocumentStatus, string> = {
   pending: "待解析",
@@ -21,11 +21,19 @@ const statusClass: Record<DocumentStatus, string> = {
 interface DocumentTableProps {
   page: number;
   pageSize: number;
+  status?: DocumentStatus;
   onPageChange: (page: number) => void;
+  onOpenDetail: (docId: string) => void;
 }
 
-export default function DocumentTable({ page, pageSize, onPageChange }: DocumentTableProps) {
-  const { data, isLoading, isError } = useDocuments(page, pageSize);
+export default function DocumentTable({
+  page,
+  pageSize,
+  status,
+  onPageChange,
+  onOpenDetail,
+}: DocumentTableProps) {
+  const { data, isLoading, isError } = useDocuments(page, pageSize, status);
   const remove = useDeleteDocument();
 
   if (isLoading) return <p className="text-sm text-slate-400">加载中…</p>;
@@ -35,6 +43,12 @@ export default function DocumentTable({ page, pageSize, onPageChange }: Document
   }
 
   const totalPages = Math.max(1, Math.ceil(data.total / data.page_size));
+
+  const handleDelete = (doc: DocumentItem) => {
+    if (window.confirm(`确定删除「${doc.filename}」？将同时移除其分块与向量索引。`)) {
+      remove.mutate(doc.id);
+    }
+  };
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -50,7 +64,11 @@ export default function DocumentTable({ page, pageSize, onPageChange }: Document
         </thead>
         <tbody className="divide-y divide-slate-100">
           {data.items.map((doc) => (
-            <tr key={doc.id} className="hover:bg-slate-50">
+            <tr
+              key={doc.id}
+              onClick={() => onOpenDetail(doc.id)}
+              className="cursor-pointer hover:bg-slate-50"
+            >
               <td className="px-4 py-3 font-medium text-slate-800">{doc.filename}</td>
               <td className="px-4 py-3 text-slate-500">{doc.file_type.toUpperCase()}</td>
               <td className="px-4 py-3 text-slate-500">{(doc.file_size / 1024 / 1024).toFixed(1)} MB</td>
@@ -62,7 +80,21 @@ export default function DocumentTable({ page, pageSize, onPageChange }: Document
               <td className="px-4 py-3 text-right">
                 <button
                   type="button"
-                  onClick={() => remove.mutate(doc.id)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpenDetail(doc.id);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                >
+                  <Eye className="size-3.5" />
+                  详情
+                </button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleDelete(doc);
+                  }}
                   className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-slate-500 hover:bg-red-50 hover:text-red-600"
                 >
                   <Trash2 className="size-3.5" />

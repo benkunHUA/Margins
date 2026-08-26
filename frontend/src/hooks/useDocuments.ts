@@ -1,13 +1,44 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { deleteDocument, listDocuments, uploadDocuments } from "@/api/documents";
+import {
+  deleteDocument,
+  getDocument,
+  getDocumentChunks,
+  listDocuments,
+  reparseDocument,
+  uploadDocuments,
+} from "@/api/documents";
 import { useDocumentStore } from "@/stores/documentStore";
+import type { DocumentStatus } from "@/types";
 
-export function useDocuments(page = 1, pageSize = 20) {
+export function useDocuments(page = 1, pageSize = 20, status?: DocumentStatus) {
   const keyword = useDocumentStore((state) => state.keyword);
   return useQuery({
-    queryKey: ["documents", page, pageSize, keyword],
-    queryFn: () => listDocuments({ page, page_size: pageSize, q: keyword || undefined }),
+    queryKey: ["documents", page, pageSize, keyword, status],
+    queryFn: () =>
+      listDocuments({ page, page_size: pageSize, q: keyword || undefined, status }),
+    refetchInterval: (query) =>
+      (query.state.data?.items ?? []).some(
+        (doc) => doc.status === "pending" || doc.status === "parsing",
+      )
+        ? 2000
+        : false,
+  });
+}
+
+export function useDocument(id: string | null) {
+  return useQuery({
+    queryKey: ["document", id],
+    queryFn: () => getDocument(id as string),
+    enabled: id !== null,
+  });
+}
+
+export function useDocumentChunks(id: string | null) {
+  return useQuery({
+    queryKey: ["document-chunks", id],
+    queryFn: () => getDocumentChunks(id as string),
+    enabled: id !== null,
   });
 }
 
@@ -24,5 +55,17 @@ export function useDeleteDocument() {
   return useMutation({
     mutationFn: (id: string) => deleteDocument(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["documents"] }),
+  });
+}
+
+export function useReparseDocument() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => reparseDocument(id),
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: ["documents"] });
+      queryClient.invalidateQueries({ queryKey: ["document", id] });
+      queryClient.invalidateQueries({ queryKey: ["document-chunks", id] });
+    },
   });
 }

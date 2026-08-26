@@ -1,5 +1,5 @@
 import { request } from "@/api/client";
-import type { DocumentDetail, DocumentItem, DocumentStatus, Page } from "@/types";
+import type { ChunkItem, DocumentDetail, DocumentItem, DocumentStatus, Page } from "@/types";
 
 export interface ListDocumentsParams {
   page?: number;
@@ -20,6 +20,10 @@ export function listDocuments(params: ListDocumentsParams = {}) {
 
 export function getDocument(id: string) {
   return request<DocumentDetail>(`/documents/${id}`);
+}
+
+export function getDocumentChunks(id: string) {
+  return request<ChunkItem[]>(`/documents/${id}/chunks`);
 }
 
 export async function uploadDocuments(files: File[]) {

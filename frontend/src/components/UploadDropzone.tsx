@@ -5,15 +5,24 @@ import { useUploadDocuments } from "@/hooks/useDocuments";
 import { cn } from "@/lib/utils";
 
 const ACCEPTED = ".pdf,.docx,.md,.txt";
+const ALLOWED_EXTENSIONS = ["pdf", "docx", "md", "txt"];
 
 export default function UploadDropzone() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
   const upload = useUploadDocuments();
 
   const handleFiles = (files: File[]) => {
     if (files.length === 0) return;
-    upload.mutate(files);
+    const valid = files.filter((file) =>
+      ALLOWED_EXTENSIONS.includes(file.name.split(".").pop()?.toLowerCase() ?? ""),
+    );
+    setValidationError(
+      valid.length !== files.length ? "包含不支持的文件类型（仅支持 PDF / Word / Markdown / TXT）" : null,
+    );
+    if (valid.length === 0) return;
+    upload.mutate(valid);
   };
 
   return (
@@ -54,6 +63,12 @@ export default function UploadDropzone() {
         }}
       />
       {upload.isPending && <p className="mt-3 text-xs text-sky-600">正在上传…</p>}
+      {upload.isSuccess && (
+        <p className="mt-3 text-xs text-emerald-600">
+          已上传 {upload.data.length} 个文件，开始解析…
+        </p>
+      )}
+      {validationError && <p className="mt-3 text-xs text-red-600">{validationError}</p>}
       {upload.isError && <p className="mt-3 text-xs text-red-600">{upload.error.message}</p>}
     </div>
   );

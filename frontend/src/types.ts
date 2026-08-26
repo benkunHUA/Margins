@@ -16,6 +16,15 @@ export interface DocumentDetail extends DocumentItem {
   markdown?: string | null;
 }
 
+export interface ChunkItem {
+  id: string;
+  chunk_index: number;
+  content: string;
+  heading_path: string | null;
+  token_count: number | null;
+  page: number | null;
+}
+
 export interface SessionItem {
   id: string;
   title: string;
