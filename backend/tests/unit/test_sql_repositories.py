@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.domain.entities import Chunk, Document, Message, ParseJob, Session
+from app.domain.entities import Chunk, Citation, Document, Message, ParseJob, Session
 from app.domain.enums import DocumentStatus, MessageRole, ParseJobStatus
 from app.repositories.sql.chunks import ChunkSqlRepository
 from app.repositories.sql.database import create_engine_and_sessionmaker, init_db
@@ -107,3 +107,21 @@ async def test_session_repository(repos) -> None:
     await sessions.delete(session.id)
     assert await sessions.get(session.id) is None
     assert await sessions.list_messages(session.id, limit=10) == []  # 级联删除消息
+
+
+async def test_session_message_citations_roundtrip(repos) -> None:
+    _, _, _, sessions = repos
+    session = await sessions.create(Session())
+    citation = Citation(chunk_id=uuid4(), document_id=uuid4(), doc_title="a", snippet="s")
+    await sessions.add_message(
+        Message(
+            session_id=session.id,
+            role=MessageRole.ASSISTANT,
+            content="x",
+            citations=[citation],
+        )
+    )
+
+    messages = await sessions.list_messages(session.id, limit=10)
+    assert len(messages[0].citations) == 1
+    assert messages[0].citations[0].chunk_id == citation.chunk_id

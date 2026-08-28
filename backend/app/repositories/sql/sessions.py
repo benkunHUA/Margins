@@ -108,7 +108,10 @@ def _message_row(msg: Message) -> MessageRow:
         session_id=str(msg.session_id),
         role=msg.role.value,
         content=msg.content,
-        citations=json.dumps([c.model_dump() for c in msg.citations], ensure_ascii=False),
+        citations=json.dumps(
+            [c.model_dump(mode="json") for c in msg.citations],
+            ensure_ascii=False,
+        ),
         created_at=msg.created_at,
     )
 
