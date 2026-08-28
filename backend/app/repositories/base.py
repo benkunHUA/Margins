@@ -83,6 +83,9 @@ class SessionRepository(ABC):
     @abstractmethod
     async def list_messages(self, session_id: UUID, *, limit: int) -> list[Message]: ...
 
+    @abstractmethod
+    async def update_title(self, session_id: UUID, title: str) -> Session: ...
+
 
 class ParseJobRepository(ABC):
     @abstractmethod

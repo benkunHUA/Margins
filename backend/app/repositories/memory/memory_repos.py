@@ -129,6 +129,11 @@ class InMemorySessionRepository(SessionRepository):
     async def list_messages(self, session_id: UUID, *, limit: int) -> list[Message]:
         return self._messages.get(session_id, [])[-limit:]
 
+    async def update_title(self, session_id: UUID, title: str) -> Session:
+        session = self._sessions[session_id]
+        session.title = title
+        return session
+
 
 class InMemoryParseJobRepository(ParseJobRepository):
     def __init__(self) -> None:
