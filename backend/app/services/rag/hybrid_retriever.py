@@ -23,4 +23,8 @@ class HybridRetriever:
 
     async def retrieve(self, query: str) -> list[ScoredChunk]:
         embedding = await self._embeddings.embed_query(query)
-        return await self._vector.search(embedding, self._config.dense_k)
+        results = await self._vector.search(embedding, self._config.dense_k)
+        threshold = self._config.relevance_threshold
+        if threshold > 0:
+            results = [item for item in results if item.score >= threshold]
+        return results

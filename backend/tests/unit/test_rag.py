@@ -1,4 +1,4 @@
-"""M2 检索管线测试（fake 向量/LLM）。"""
+"""M2 检索管线测试（fake 向量/LLM；引用后置 + [n] 过滤 + 阈值）。"""
 
 from uuid import uuid4
 
@@ -23,11 +23,15 @@ class FakeEmbeddings(EmbeddingService):
 
 
 class FakeVector(VectorRepository):
-    def __init__(self, chunk: Chunk) -> None:
-        self.chunk = chunk
+    def __init__(self, chunks: list[Chunk], scores: list[float] | None = None) -> None:
+        self.chunks = chunks
+        self.scores = scores or [0.9 - index * 0.05 for index in range(len(chunks))]
 
     async def search(self, embedding, k):
-        return [ScoredChunk(chunk=self.chunk, score=0.9)]
+        return [
+            ScoredChunk(chunk=chunk, score=score)
+            for chunk, score in zip(self.chunks, self.scores, strict=True)
+        ]
 
     async def add(self, items):
         pass
@@ -43,60 +47,124 @@ class FakeVector(VectorRepository):
 
 
 class FakeLLM(LLMClient):
-    def __init__(self) -> None:
+    def __init__(self, tokens: list[str] | None = None) -> None:
+        self.tokens = tokens or ["基于", "资料", "回答"]
         self.received: list[ChatMessage] = []
 
     async def stream(self, messages):
         self.received = list(messages)
-        for token in ["基于", "资料", "回答"]:
+        for token in self.tokens:
             yield token
 
 
-def _config() -> RetrievalConfig:
-    return RetrievalConfig(
+def _chunk(title: str, content: str) -> Chunk:
+    return Chunk(
+        id=uuid4(),
+        document_id=uuid4(),
+        chunk_index=0,
+        content=content,
+        heading_path="第三章",
+        metadata={"doc_title": title},
+    )
+
+
+def _config(**overrides) -> RetrievalConfig:
+    defaults = dict(
         dense_k=30,
         final_k=3,
         history_limit=6,
         context_token_budget=12000,
+        relevance_threshold=0.3,
+        max_citations=5,
     )
+    defaults.update(overrides)
+    return RetrievalConfig(**defaults)
 
 
-def _pipeline(chunk: Chunk):
+def _pipeline(
+    chunks: list[Chunk],
+    llm: FakeLLM | None = None,
+    config: RetrievalConfig | None = None,
+):
+    cfg = config or _config()
     embeddings = FakeEmbeddings()
-    vector = FakeVector(chunk)
-    sparse = type("Sparse", (), {})()
-    hybrid = HybridRetriever(vector, sparse, embeddings, None, _config())
-    llm = FakeLLM()
+    hybrid = HybridRetriever(
+        FakeVector(chunks), type("Sparse", (), {})(), embeddings, None, cfg
+    )
+    llm = llm or FakeLLM()
     rag = RAGPipeline(
         rewriter=type("Rewriter", (), {})(),
         hybrid=hybrid,
         reranker=type("Reranker", (), {})(),
-        context_builder=ContextBuilder(_config()),
+        context_builder=ContextBuilder(cfg),
         llm_client=llm,
-        config=_config(),
+        config=cfg,
     )
     return rag, llm
 
 
-async def test_run_emits_citations_delta_done() -> None:
-    chunk = Chunk(
-        id=uuid4(),
-        document_id=uuid4(),
-        chunk_index=0,
-        content="合同约定违约金为 10%。",
-        heading_path="第三章",
-        metadata={"doc_title": "合同.pdf"},
-    )
-    rag, llm = _pipeline(chunk)
+async def test_citations_arrive_after_deltas_with_only_referenced() -> None:
+    chunks = [
+        _chunk("a.pdf", "合同约定违约金为 10%。"),
+        _chunk("b.pdf", "仲裁条款见第五章。"),
+    ]
+    rag, llm = _pipeline(chunks, FakeLLM(tokens=["根据", "[2]", "回答"]))
     history = [Message(session_id=uuid4(), role=MessageRole.USER, content="旧问题")]
 
     events = [event async for event in rag.run("违约金多少？", history)]
-    assert isinstance(events[0], CitationsEvent)
-    assert events[0].citations[0].doc_title == "合同.pdf"
-    assert any(isinstance(e, DeltaEvent) for e in events)
+
+    delta_indexes = [i for i, e in enumerate(events) if isinstance(e, DeltaEvent)]
+    citations_index = next(i for i, e in enumerate(events) if isinstance(e, CitationsEvent))
+    assert delta_indexes and citations_index > delta_indexes[-1]  # 引用在回答之后
     assert isinstance(events[-1], DoneEvent)
+
+    citations = events[citations_index].citations
+    assert len(citations) == 1  # 只保留回答中引用的 [2]
+    assert citations[0].doc_title == "b.pdf"
     assert llm.received[0].role == "system"
     assert "违约金" in llm.received[-1].content
+
+
+async def test_citations_deduped_and_in_first_appearance_order() -> None:
+    chunks = [
+        _chunk("a.pdf", "内容一"),
+        _chunk("b.pdf", "内容二"),
+    ]
+    rag, _ = _pipeline(chunks, FakeLLM(tokens=["[1]", "[2]", "[1]"]))
+
+    events = [event async for event in rag.run("q", [])]
+    citations = next(e.citations for e in events if isinstance(e, CitationsEvent))
+    assert [c.doc_title for c in citations] == ["a.pdf", "b.pdf"]
+
+
+async def test_citations_capped_by_config() -> None:
+    chunks = [
+        _chunk("a.pdf", "内容一"),
+        _chunk("b.pdf", "内容二"),
+    ]
+    rag, _ = _pipeline(chunks, FakeLLM(tokens=["[1]", "[2]"]), _config(max_citations=1))
+
+    events = [event async for event in rag.run("q", [])]
+    citations = next(e.citations for e in events if isinstance(e, CitationsEvent))
+    assert [c.doc_title for c in citations] == ["a.pdf"]
+
+
+async def test_retrieval_threshold_filters_low_scores() -> None:
+    chunks = [
+        _chunk("a.pdf", "高相关"),
+        _chunk("b.pdf", "低相关"),
+    ]
+    cfg = _config(relevance_threshold=0.3)
+    hybrid = HybridRetriever(
+        FakeVector(chunks, scores=[0.9, 0.1]),
+        type("Sparse", (), {})(),
+        FakeEmbeddings(),
+        None,
+        cfg,
+    )
+
+    results = await hybrid.retrieve("q")
+    assert [item.chunk.metadata["doc_title"] for item in results] == ["a.pdf"]
 
 
 async def test_run_emits_error_on_failure() -> None:
@@ -104,18 +172,18 @@ async def test_run_emits_error_on_failure() -> None:
         async def search(self, embedding, k):
             raise RuntimeError("vector down")
 
-    chunk = Chunk(id=uuid4(), document_id=uuid4(), chunk_index=0, content="x")
-    embeddings = FakeEmbeddings()
+    chunk = _chunk("a.pdf", "x")
+    cfg = _config()
     hybrid = HybridRetriever(
-        BoomVector(chunk), type("Sparse", (), {})(), embeddings, None, _config()
+        BoomVector([chunk]), type("Sparse", (), {})(), FakeEmbeddings(), None, cfg
     )
     rag = RAGPipeline(
         rewriter=type("Rewriter", (), {})(),
         hybrid=hybrid,
         reranker=type("Reranker", (), {})(),
-        context_builder=ContextBuilder(_config()),
+        context_builder=ContextBuilder(cfg),
         llm_client=FakeLLM(),
-        config=_config(),
+        config=cfg,
     )
     events = [event async for event in rag.run("q", [])]
     assert isinstance(events[-1], ErrorEvent)

@@ -49,6 +49,7 @@ class RetrievalConfig(BaseModel):
     rerank_top_n: int = 10
     final_k: int = 10
     relevance_threshold: float = 0.3
+    max_citations: int = 5
     history_limit: int = 6
     context_token_budget: int = 12_000
 
@@ -95,6 +96,7 @@ class Settings(BaseSettings):
     rerank_top_n: int = Field(10, validation_alias="RERANK_TOP_N")
     final_k: int = Field(10, validation_alias="FINAL_K")
     relevance_threshold: float = Field(0.3, validation_alias="RELEVANCE_THRESHOLD")
+    max_citations: int = Field(5, validation_alias="MAX_CITATIONS")
     history_limit: int = Field(6, validation_alias="HISTORY_LIMIT")
     context_token_budget: int = Field(12_000, validation_alias="CONTEXT_TOKEN_BUDGET")
 
@@ -131,6 +133,7 @@ class Settings(BaseSettings):
             rerank_top_n=self.rerank_top_n,
             final_k=self.final_k,
             relevance_threshold=self.relevance_threshold,
+            max_citations=self.max_citations,
             history_limit=self.history_limit,
             context_token_budget=self.context_token_budget,
         )
