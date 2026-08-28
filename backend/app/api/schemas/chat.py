@@ -16,7 +16,9 @@ def format_sse(event: RagEvent) -> str:
     if isinstance(event, MetaEvent):
         name, data = "meta", {"session_id": event.session_id, "message_id": event.message_id}
     elif isinstance(event, CitationsEvent):
-        name, data = "citations", {"citations": [c.model_dump() for c in event.citations]}
+        name, data = "citations", {
+            "citations": [c.model_dump(mode="json") for c in event.citations]
+        }
     elif isinstance(event, DeltaEvent):
         name, data = "delta", {"content": event.content}
     elif isinstance(event, DoneEvent):
