@@ -1,4 +1,4 @@
-"""MinerU 解析服务测试（注入 fake client，不触网）。"""
+"""MinerU 解析服务测试（注入 fake client，不触网；按页数路由）。"""
 
 from pathlib import Path
 
@@ -6,6 +6,31 @@ import pytest
 
 from app.core.config import ParserConfig
 from app.services.parsing import MineruOnlineParser, ParsedDocument
+
+
+def _build_pdf(pages: int) -> bytes:
+    """生成最小合法 PDF（仅页骨架，用于数页数）。"""
+    kids = " ".join(f"{i} 0 R" for i in range(3, 3 + pages))
+    objs = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        f"<< /Type /Pages /Kids [{kids}] /Count {pages} >>".encode(),
+    ]
+    for _ in range(pages):
+        objs.append(b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>")
+
+    out = bytearray(b"%PDF-1.4\n")
+    offsets: list[int] = []
+    for idx, body in enumerate(objs, start=1):
+        offsets.append(len(out))
+        out += f"{idx} 0 obj\n".encode() + body + b"\nendobj\n"
+    xref_pos = len(out)
+    out += f"xref\n0 {len(objs) + 1}\n".encode()
+    out += b"0000000000 65535 f \n"
+    for off in offsets:
+        out += f"{off:010d} 00000 n \n".encode()
+    trailer = f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref_pos}\n%%EOF\n"
+    out += trailer.encode()
+    return bytes(out)
 
 
 class FakeMineruClient:
@@ -41,7 +66,7 @@ class FakeMineruClientWithFailures(FakeMineruClient):
         return super().extract(source, **kwargs)
 
 
-async def test_small_file_uses_flash(tmp_path: Path) -> None:
+async def test_small_non_pdf_uses_flash(tmp_path: Path) -> None:
     client = FakeMineruClient()
     parser = MineruOnlineParser(ParserConfig(mineru_api_token="t"), client=client)
     f = tmp_path / "small.md"
@@ -51,6 +76,7 @@ async def test_small_file_uses_flash(tmp_path: Path) -> None:
     assert isinstance(result, ParsedDocument)
     assert result.markdown == "# flash 结果"
     assert client.flash_sources == [str(f)]
+    assert client.extract_sources == []
 
 
 async def test_large_file_uses_extract(tmp_path: Path) -> None:
@@ -65,30 +91,53 @@ async def test_large_file_uses_extract(tmp_path: Path) -> None:
     result = await parser.parse(f, file_type="pdf")
     assert result.markdown == "# extract 结果"
     assert client.extract_sources == [str(f)]
+    assert client.flash_sources == []
 
 
-async def test_flash_failure_falls_back_to_extract(tmp_path: Path) -> None:
+async def test_pdf_with_few_pages_uses_flash(tmp_path: Path) -> None:
+    client = FakeMineruClient()
+    parser = MineruOnlineParser(ParserConfig(mineru_api_token="t"), client=client)
+    f = tmp_path / "few.pdf"
+    f.write_bytes(_build_pdf(1))
+
+    result = await parser.parse(f, file_type="pdf")
+    assert result.markdown == "# flash 结果"
+    assert client.flash_sources == [str(f)]
+    assert client.extract_sources == []
+
+
+async def test_pdf_many_pages_uses_extract(tmp_path: Path) -> None:
+    client = FakeMineruClient()
+    parser = MineruOnlineParser(ParserConfig(mineru_api_token="t"), client=client)
+    f = tmp_path / "many.pdf"
+    f.write_bytes(_build_pdf(21))
+
+    result = await parser.parse(f, file_type="pdf")
+    assert result.markdown == "# extract 结果"
+    assert client.extract_sources == [str(f)]
+    assert client.flash_sources == []
+
+
+async def test_flash_failure_does_not_fallback(tmp_path: Path) -> None:
     client = FakeMineruClientWithFailures(
         flash_result={"state": "failed", "err_code": "-30003", "error": "page limit"},
     )
     parser = MineruOnlineParser(ParserConfig(mineru_api_token="t"), client=client)
-    f = tmp_path / "big.pdf"
-    f.write_bytes(b"x" * 100)
+    f = tmp_path / "few.pdf"
+    f.write_bytes(_build_pdf(1))
 
-    result = await parser.parse(f, file_type="pdf")
-    assert result.markdown == "# extract 结果"
-    assert len(client.flash_sources) == 1
-    assert len(client.extract_sources) == 1
+    with pytest.raises(ValueError, match="-30003"):
+        await parser.parse(f, file_type="pdf")
+    assert client.extract_sources == []  # 按页数路由，不做失败回退
 
 
-async def test_parse_failure_reports_real_error(tmp_path: Path) -> None:
+async def test_parse_failure_reports_real_error_with_token_hint(tmp_path: Path) -> None:
     client = FakeMineruClientWithFailures(
-        flash_result={"state": "failed", "err_code": "-30003", "error": "page limit"},
         extract_result={"state": "failed", "err_code": "-10001", "error": "InvalidApiKey"},
     )
     parser = MineruOnlineParser(ParserConfig(mineru_api_token=""), client=client)
-    f = tmp_path / "big.pdf"
-    f.write_bytes(b"x" * 100)
+    f = tmp_path / "many.pdf"
+    f.write_bytes(_build_pdf(21))
 
     with pytest.raises(ValueError, match="-10001"):
         await parser.parse(f, file_type="pdf")

@@ -23,7 +23,8 @@ class MineruParser(ABC):
 
 
 class MineruOnlineParser(MineruParser):
-    """小文件（≤flash_max_size_mb）走 flash_extract 快速通道，其余走 extract。"""
+    """按大小与页数路由：PDF 页数 ≤flash_max_pages 且大小 ≤flash_max_size_mb 走 flash，
+    否则走 extract。"""
 
     def __init__(self, config: ParserConfig, client: MinerU | None = None) -> None:
         self._config = config
@@ -31,21 +32,37 @@ class MineruOnlineParser(MineruParser):
 
     async def parse(self, file_path: Path, *, file_type: str) -> ParsedDocument:
         size_mb = file_path.stat().st_size / 1024 / 1024
+        pages = _count_pdf_pages(file_path)
         source = str(file_path)
-        used_flash = size_mb <= self._config.flash_max_size_mb
+        if _should_use_flash(size_mb, pages, self._config):
+            result = await asyncio.to_thread(self._client.flash_extract, source)
+        else:
+            result = await asyncio.to_thread(self._client.extract, source)
 
-        if used_flash:
-            flash_result = await asyncio.to_thread(self._client.flash_extract, source)
-            markdown = _markdown(flash_result)
-            if _state(flash_result) == "done" and markdown:
-                return _to_parsed(flash_result, markdown)
-            # flash 失败（如页数超限）→ 回退 extract
-
-        result = await asyncio.to_thread(self._client.extract, source)
         markdown = _markdown(result)
-        if not markdown:
-            raise ValueError(_failure_message(file_path, result))
-        return _to_parsed(result, markdown)
+        if _state(result) == "done" and markdown:
+            return _to_parsed(result, markdown)
+        raise ValueError(_failure_message(file_path, result))
+
+
+def _should_use_flash(size_mb: float, pages: int | None, config: ParserConfig) -> bool:
+    if size_mb > config.flash_max_size_mb:
+        return False
+    if pages is None:
+        return True  # 非 PDF 或页数不可得时按大小路由（原有行为）
+    return pages <= config.flash_max_pages
+
+
+def _count_pdf_pages(file_path: Path) -> int | None:
+    """返回 PDF 页数；非 PDF 或解析失败返回 None。"""
+    if file_path.suffix.lower() != ".pdf":
+        return None
+    try:
+        from pypdf import PdfReader
+
+        return len(PdfReader(str(file_path)).pages)
+    except Exception:
+        return None
 
 
 def _field(result, name: str, default=None):
