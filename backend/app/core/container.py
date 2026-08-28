@@ -14,13 +14,13 @@ from app.repositories.memory.memory_repos import (
 from app.repositories.sql.chunks import ChunkSqlRepository
 from app.repositories.sql.database import create_engine_and_sessionmaker, init_db
 from app.repositories.sql.documents import DocumentSqlRepository
-from app.repositories.sql.sessions import ParseJobSqlRepository
+from app.repositories.sql.sessions import ParseJobSqlRepository, SessionSqlRepository
 from app.services.chat_service import ChatService
 from app.services.chunking import Chunker, MarkdownChunker
 from app.services.document_service import DocumentService
 from app.services.embedding import DashScopeEmbeddingService, EmbeddingService
 from app.services.indexing import IndexingPipeline
-from app.services.llm import LangChainLLMClient
+from app.services.llm import LangChainLLMClient, LLMClient
 from app.services.parsing import MineruOnlineParser, MineruParser
 from app.services.rag.context_builder import ContextBuilder
 from app.services.rag.hybrid_retriever import HybridRetriever
@@ -49,6 +49,7 @@ class ServiceContainer:
         embeddings: EmbeddingService | None = None,
         chunker: Chunker | None = None,
         vector: VectorRepository | None = None,
+        llm_client: LLMClient | None = None,
     ) -> None:
         self.settings = settings
         self.start_worker = start_worker
@@ -62,11 +63,12 @@ class ServiceContainer:
             self.documents = DocumentSqlRepository(session_factory)
             self.chunks = ChunkSqlRepository(session_factory)
             self.jobs = ParseJobSqlRepository(session_factory)
+            self.sessions = SessionSqlRepository(session_factory)
         else:
             self.documents = InMemoryDocumentRepository()
             self.chunks = InMemoryChunkRepository()
             self.jobs = InMemoryParseJobRepository()
-        self.sessions = InMemorySessionRepository()  # M2 换 SQL
+            self.sessions = InMemorySessionRepository()
 
         self.parse_queue: asyncio.Queue[UUID] = asyncio.Queue()
         self.parser = parser or MineruOnlineParser(settings.parser)
@@ -76,7 +78,7 @@ class ServiceContainer:
             settings.storage, self.embedding, settings.models.embedding_dimension
         )
         self.sparse = BM25SparseIndex()
-        self.llm_client = LangChainLLMClient(settings.models)
+        self.llm_client = llm_client or LangChainLLMClient(settings.models)
         self.reranker = DashScopeReranker(settings.models)
         self.fusion = RRFFusion()
         self.rewriter = LLMQueryRewriter(self.llm_client, settings.retrieval)
@@ -111,7 +113,11 @@ class ServiceContainer:
             self.parse_queue,
             settings,
         )
-        self.chat_service = ChatService(self.sessions, self.rag)
+        self.chat_service = ChatService(
+            self.sessions,
+            self.rag,
+            history_limit=settings.retrieval.history_limit,
+        )
 
     async def startup(self) -> None:
         storage = self.settings.storage
