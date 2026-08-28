@@ -22,11 +22,20 @@ class IndexingPipeline:
         self._vector = vector
         self._chunks = chunks
 
-    async def run(self, markdown: str, *, document_id: UUID) -> None:
+    async def run(
+        self,
+        markdown: str,
+        *,
+        document_id: UUID,
+        doc_title: str | None = None,
+    ) -> None:
         await self._chunks.delete_by_document(document_id)  # 幂等：先清旧块
         chunks = self._chunker.chunk(markdown, document_id=document_id)
         if not chunks:
             raise ParseFailedError("解析结果为空，无法入库")
+        if doc_title:
+            for chunk in chunks:
+                chunk.metadata["doc_title"] = doc_title
 
         texts = [chunk.content for chunk in chunks]
         embeddings = await self._embeddings.embed_texts(texts)

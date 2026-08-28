@@ -1,9 +1,8 @@
-"""混合检索：Faiss 稠密 + BM25 稀疏 + RRF 融合。"""
+"""混合检索：M2 走 Faiss 稠密路；M3 增加 BM25 稀疏 + RRF 融合。"""
 
 from app.core.config import RetrievalConfig
-from app.core.exceptions import NotImplementedStageError
 from app.services.embedding import EmbeddingService
-from app.vector.base import SparseIndex, VectorRepository
+from app.vector.base import ScoredChunk, SparseIndex, VectorRepository
 from app.vector.fusion import RRFFusion
 
 
@@ -22,6 +21,6 @@ class HybridRetriever:
         self._fusion = fusion
         self._config = config
 
-    async def retrieve(self, query: str):
-        """M3 落地：dense(sparse_k) + sparse(sparse_k) → RRF → top fusion_top_n。"""
-        raise NotImplementedStageError("M3: 混合检索")
+    async def retrieve(self, query: str) -> list[ScoredChunk]:
+        embedding = await self._embeddings.embed_query(query)
+        return await self._vector.search(embedding, self._config.dense_k)

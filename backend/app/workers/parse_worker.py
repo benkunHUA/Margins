@@ -75,7 +75,11 @@ class ParseWorker:
                 markdown_path = parsed_dir / f"{doc.id}.md"
                 await asyncio.to_thread(markdown_path.write_text, parsed.markdown, "utf-8")
 
-                await self._indexing.run(parsed.markdown, document_id=doc.id)
+                await self._indexing.run(
+                    parsed.markdown,
+                    document_id=doc.id,
+                    doc_title=doc.filename,
+                )
 
                 doc.markdown_path = markdown_path
                 doc.status = DocumentStatus.READY

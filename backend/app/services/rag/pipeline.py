@@ -4,8 +4,14 @@ from collections.abc import AsyncIterator, Sequence
 
 from app.core.config import RetrievalConfig
 from app.domain.entities import Message
-from app.domain.events import ErrorEvent, RagEvent
-from app.services.llm import LLMClient
+from app.domain.events import (
+    CitationsEvent,
+    DeltaEvent,
+    DoneEvent,
+    ErrorEvent,
+    RagEvent,
+)
+from app.services.llm import ChatMessage, LLMClient
 from app.services.rag.context_builder import ContextBuilder
 from app.services.rag.hybrid_retriever import HybridRetriever
 from app.services.rag.query_rewriter import QueryRewriter
@@ -36,5 +42,20 @@ class RAGPipeline:
         *,
         final_k: int | None = None,
     ) -> AsyncIterator[RagEvent]:
-        """M2/M3 落地：改写 → 混合检索 → 重排 → 组装 → 流式生成。"""
-        yield ErrorEvent(code="NOT_IMPLEMENTED", message="检索管线将在 M2/M3 里程碑实现")
+        try:
+            candidates = await self._hybrid.retrieve(question)
+            top = candidates[: final_k or self._config.final_k]
+            bundle = self._context_builder.build(
+                top,
+                history,
+                question,
+                token_budget=self._config.context_token_budget,
+            )
+            yield CitationsEvent(citations=bundle.citations)
+            messages = [ChatMessage(**item) for item in bundle.messages]
+            async for delta in self._llm_client.stream(messages):
+                yield DeltaEvent(content=delta)
+        except Exception as exc:
+            yield ErrorEvent(code="RAG_ERROR", message=str(exc))
+            return
+        yield DoneEvent(message_id="")

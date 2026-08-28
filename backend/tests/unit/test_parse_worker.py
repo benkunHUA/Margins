@@ -30,7 +30,7 @@ class FakeIndexing:
     def __init__(self) -> None:
         self.runs: list[tuple[str, object]] = []
 
-    async def run(self, markdown: str, *, document_id) -> None:
+    async def run(self, markdown: str, *, document_id, doc_title: str | None = None) -> None:
         self.runs.append((markdown, document_id))
 
 
