@@ -28,7 +28,7 @@ class MineruOnlineParser(MineruParser):
 
     def __init__(self, config: ParserConfig, client: MinerU | None = None) -> None:
         self._config = config
-        self._client = client or MinerU()
+        self._client = client or MinerU(config.mineru_api_token)
 
     async def parse(self, file_path: Path, *, file_type: str) -> ParsedDocument:
         size_mb = file_path.stat().st_size / 1024 / 1024

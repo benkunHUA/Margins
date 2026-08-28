@@ -66,6 +66,34 @@ class FakeMineruClientWithFailures(FakeMineruClient):
         return super().extract(source, **kwargs)
 
 
+def test_mineru_constructed_with_api_token(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeMinerU:
+        def __init__(self, token: str | None = None, **kwargs) -> None:
+            captured["token"] = token
+
+    monkeypatch.setattr("app.services.parsing.MinerU", FakeMinerU)
+    MineruOnlineParser(ParserConfig(mineru_api_token="sk-123"))
+    assert captured["token"] == "sk-123"
+
+
+def test_injected_client_skips_constructor(monkeypatch) -> None:
+    called = False
+
+    class FakeMinerU:
+        def __init__(self, *args, **kwargs) -> None:
+            nonlocal called
+            called = True
+
+    monkeypatch.setattr("app.services.parsing.MinerU", FakeMinerU)
+    MineruOnlineParser(
+        ParserConfig(mineru_api_token="t"),
+        client=FakeMineruClient(),
+    )
+    assert called is False
+
+
 async def test_small_non_pdf_uses_flash(tmp_path: Path) -> None:
     client = FakeMineruClient()
     parser = MineruOnlineParser(ParserConfig(mineru_api_token="t"), client=client)
