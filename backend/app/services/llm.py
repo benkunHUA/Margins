@@ -19,6 +19,20 @@ class LLMClient(ABC):
     @abstractmethod
     async def stream(self, messages: Sequence[ChatMessage]) -> AsyncIterator[str]: ...
 
+    @abstractmethod
+    async def complete(self, messages: Sequence[ChatMessage]) -> str: ...
+
+
+def _to_lc_messages(messages: Sequence[ChatMessage]):
+    return [
+        HumanMessage(content=m.content)
+        if m.role == "user"
+        else SystemMessage(content=m.content)
+        if m.role == "system"
+        else AIMessage(content=m.content)
+        for m in messages
+    ]
+
 
 class LangChainLLMClient(LLMClient):
     """model 可注入替身（测试）；默认 ChatOpenAI。"""
@@ -42,15 +56,12 @@ class LangChainLLMClient(LLMClient):
         return self._client
 
     async def stream(self, messages: Sequence[ChatMessage]) -> AsyncIterator[str]:
-        lc_messages = [
-            HumanMessage(content=m.content)
-            if m.role == "user"
-            else SystemMessage(content=m.content)
-            if m.role == "system"
-            else AIMessage(content=m.content)
-            for m in messages
-        ]
-        async for chunk in self._model_client().astream(lc_messages):
+        async for chunk in self._model_client().astream(_to_lc_messages(messages)):
             text = getattr(chunk, "content", None)
             if isinstance(text, str) and text:
                 yield text
+
+    async def complete(self, messages: Sequence[ChatMessage]) -> str:
+        response = await self._model_client().ainvoke(_to_lc_messages(messages))
+        text = getattr(response, "content", "")
+        return text if isinstance(text, str) else ""

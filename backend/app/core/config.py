@@ -39,6 +39,7 @@ class ModelConfig(BaseModel):
     llm_base_url: str = "https://api.deepseek.com"
     llm_api_key: str = ""
     llm_model: str = "deepseek-chat"
+    rerank_instruct: str = ""
 
 
 class RetrievalConfig(BaseModel):
@@ -66,6 +67,15 @@ class QueueConfig(BaseModel):
     backoff_seconds: tuple[float, ...] = (1.0, 5.0, 15.0)
 
 
+class RewriteConfig(BaseModel):
+    num_rewrites: int = 2
+    include_original: bool = True
+    hyde_enabled: bool = False
+    max_queries: int = 5
+    history_limit: int = 6
+    temperature: float = 0.2
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -84,6 +94,7 @@ class Settings(BaseSettings):
     llm_base_url: str = Field("https://api.deepseek.com", validation_alias="LLM_BASE_URL")
     llm_api_key: str = Field("", validation_alias="LLM_API_KEY")
     llm_model: str = Field("deepseek-chat", validation_alias="LLM_MODEL")
+    rerank_instruct: str = Field("", validation_alias="RERANK_INSTRUCT")
 
     # ----- 存储 -----
     data_dir: Path = Field(Path("./data"), validation_alias="DATA_DIR")
@@ -99,6 +110,13 @@ class Settings(BaseSettings):
     max_citations: int = Field(5, validation_alias="MAX_CITATIONS")
     history_limit: int = Field(6, validation_alias="HISTORY_LIMIT")
     context_token_budget: int = Field(12_000, validation_alias="CONTEXT_TOKEN_BUDGET")
+
+    # ----- 查询重写 -----
+    num_rewrites: int = Field(2, validation_alias="NUM_REWRITES")
+    include_original: bool = Field(True, validation_alias="INCLUDE_ORIGINAL")
+    hyde_enabled: bool = Field(False, validation_alias="HYDE_ENABLED")
+    max_queries: int = Field(5, validation_alias="MAX_QUERIES")
+    rewrite_temperature: float = Field(0.2, validation_alias="REWRITE_TEMPERATURE")
 
     # ----- 任务队列 -----
     queue_concurrency: int = Field(2, validation_alias="QUEUE__CONCURRENCY")
@@ -121,6 +139,7 @@ class Settings(BaseSettings):
             llm_base_url=self.llm_base_url,
             llm_api_key=self.llm_api_key,
             llm_model=self.llm_model,
+            rerank_instruct=self.rerank_instruct,
         )
 
     @property
@@ -151,4 +170,15 @@ class Settings(BaseSettings):
         return QueueConfig(
             concurrency=self.queue_concurrency,
             max_retries=self.queue_max_retries,
+        )
+
+    @property
+    def rewrite(self) -> RewriteConfig:
+        return RewriteConfig(
+            num_rewrites=self.num_rewrites,
+            include_original=self.include_original,
+            hyde_enabled=self.hyde_enabled,
+            max_queries=self.max_queries,
+            history_limit=self.history_limit,
+            temperature=self.rewrite_temperature,
         )
