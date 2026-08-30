@@ -4,9 +4,10 @@ import CitationCard from "@/components/CitationCard";
 
 interface MessageBubbleProps {
   message: MessageItem;
+  streaming?: boolean;
 }
 
-export default function MessageBubble({ message }: MessageBubbleProps) {
+export default function MessageBubble({ message, streaming = false }: MessageBubbleProps) {
   const isUser = message.role === "user";
   return (
     <div className={isUser ? "flex justify-end" : "flex justify-start"}>
@@ -22,6 +23,9 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
         ) : (
           <>
             <MarkdownViewer content={message.content} />
+            {streaming && (
+              <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-slate-500 align-middle" />
+            )}
             {message.citations.length > 0 && (
               <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
                 {message.citations.map((citation, index) => (

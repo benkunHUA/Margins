@@ -14,6 +14,7 @@ export default function ChatPanel({ sessionId }: ChatPanelProps) {
   const { sendMessage } = useChat(sessionId);
   const messages = useChatStore((state) => state.messages);
   const streaming = useChatStore((state) => state.streaming);
+  const lastMessageId = messages[messages.length - 1]?.id;
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -29,7 +30,13 @@ export default function ChatPanel({ sessionId }: ChatPanelProps) {
         {messages.length === 0 ? (
           <p className="pt-16 text-center text-sm text-slate-400">向知识库提问，开始对话</p>
         ) : (
-          messages.map((msg) => <MessageBubble key={msg.id} message={msg} />)
+          messages.map((msg) => (
+            <MessageBubble
+              key={msg.id}
+              message={msg}
+              streaming={streaming && msg.id === lastMessageId}
+            />
+          ))
         )}
       </div>
       <form onSubmit={onSubmit} className="flex gap-2 border-t border-slate-200 p-4">

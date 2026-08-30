@@ -84,7 +84,7 @@ export default function DocumentDrawer({ documentId, onClose }: DocumentDrawerPr
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-slate-900/30" onClick={onClose}>
       <div
-        className="flex h-full w-full max-w-3xl flex-col bg-white shadow-2xl"
+        className="flex h-full w-full flex-col bg-white shadow-2xl sm:max-w-3xl"
         onClick={(event) => event.stopPropagation()}
       >
         {/* 头部 */}

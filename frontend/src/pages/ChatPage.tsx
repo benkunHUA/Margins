@@ -64,8 +64,8 @@ export default function ChatPage() {
         </button>
       </header>
 
-      <div className="flex min-h-0 flex-1 gap-4">
-        <aside className="w-60 shrink-0 overflow-y-auto rounded-xl border border-slate-200 bg-white">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 md:flex-row">
+        <aside className="max-h-48 w-full shrink-0 overflow-y-auto rounded-xl border border-slate-200 bg-white md:max-h-none md:w-60">
           {sessions?.items.map((session) => (
             <div
               key={session.id}
@@ -89,7 +89,7 @@ export default function ChatPage() {
             </div>
           ))}
         </aside>
-        <div className="min-w-0 flex-1">
+        <div className="min-h-0 min-w-0 flex-1">
           {sessionId ? (
             <ChatPanel sessionId={sessionId} />
           ) : (

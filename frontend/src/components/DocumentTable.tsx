@@ -36,7 +36,22 @@ export default function DocumentTable({
   const { data, isLoading, isError } = useDocuments(page, pageSize, status);
   const remove = useDeleteDocument();
 
-  if (isLoading) return <p className="text-sm text-slate-400">加载中…</p>;
+  if (isLoading) {
+    return (
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="divide-y divide-slate-100">
+          {Array.from({ length: 5 }).map((_, index) => (
+            <div key={index} className="flex items-center gap-4 px-4 py-3">
+              <div className="h-3 w-1/3 animate-pulse rounded bg-slate-200" />
+              <div className="h-3 w-12 animate-pulse rounded bg-slate-200" />
+              <div className="h-3 w-16 animate-pulse rounded bg-slate-200" />
+              <div className="ml-auto h-5 w-14 animate-pulse rounded-full bg-slate-200" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
   if (isError) return <p className="text-sm text-red-600">文档列表加载失败</p>;
   if (!data || data.items.length === 0) {
     return <p className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">暂无文档</p>;
