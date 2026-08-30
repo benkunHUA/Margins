@@ -12,6 +12,15 @@ from app.services.rag.context_builder import ContextBuilder
 from app.services.rag.hybrid_retriever import HybridRetriever
 from app.services.rag.pipeline import RAGPipeline
 from app.vector.base import ScoredChunk, VectorRepository
+from app.vector.fusion import RRFFusion
+
+
+class EmptySparse:
+    async def search(self, query, k):
+        return []
+
+    async def rebuild(self, chunks):
+        pass
 
 
 class FakeEmbeddings(EmbeddingService):
@@ -56,6 +65,9 @@ class FakeLLM(LLMClient):
         for token in self.tokens:
             yield token
 
+    async def complete(self, messages):
+        return ""
+
 
 def _chunk(title: str, content: str) -> Chunk:
     return Chunk(
@@ -89,7 +101,7 @@ def _pipeline(
     cfg = config or _config()
     embeddings = FakeEmbeddings()
     hybrid = HybridRetriever(
-        FakeVector(chunks), type("Sparse", (), {})(), embeddings, None, cfg
+        FakeVector(chunks), EmptySparse(), embeddings, RRFFusion(), cfg
     )
     llm = llm or FakeLLM()
     rag = RAGPipeline(
@@ -157,9 +169,9 @@ async def test_retrieval_threshold_filters_low_scores() -> None:
     cfg = _config(relevance_threshold=0.3)
     hybrid = HybridRetriever(
         FakeVector(chunks, scores=[0.9, 0.1]),
-        type("Sparse", (), {})(),
+        EmptySparse(),
         FakeEmbeddings(),
-        None,
+        RRFFusion(),
         cfg,
     )
 
@@ -175,7 +187,7 @@ async def test_run_emits_error_on_failure() -> None:
     chunk = _chunk("a.pdf", "x")
     cfg = _config()
     hybrid = HybridRetriever(
-        BoomVector([chunk]), type("Sparse", (), {})(), FakeEmbeddings(), None, cfg
+        BoomVector([chunk]), EmptySparse(), FakeEmbeddings(), RRFFusion(), cfg
     )
     rag = RAGPipeline(
         rewriter=type("Rewriter", (), {})(),
