@@ -73,6 +73,28 @@ docker compose up --build
 
 检索参数（`DENSE_K`、`SPARSE_K`、`RRF_K`、`RERANK_TOP_N`、`FINAL_K`、`RELEVANCE_THRESHOLD` 等）见 [.env.example](.env.example)。
 
+## 部署（Docker Compose）
+
+```bash
+cp .env.example .env   # 填入 DASHSCOPE_API_KEY / MINERU_API_TOKEN / LLM_API_KEY
+docker compose up --build
+```
+
+- 前端：http://localhost:3000（nginx 托管，`/api` 反向代理到后端）
+- 后端：http://localhost:8000，健康检查 `GET /api/health` 返回 `{"status":"ok","version":"...","documents":N}`
+- 数据持久化在 `./data`（SQLite、Faiss 索引、上传文件、解析结果）
+- 后端容器带 healthcheck，前端等后端健康后才启动；SSE 流式已关闭 nginx 缓冲
+
+## 数据库迁移（Alembic）
+
+应用启动时会自动执行 `alembic upgrade head`。手动管理迁移：
+
+```bash
+cd backend
+alembic revision --autogenerate -m "描述"   # 生成新迁移
+alembic upgrade head                       # 应用迁移
+```
+
 ## 目录结构
 
 ```text
@@ -109,3 +131,9 @@ docker compose up --build
 
 - 详细设计文档保留在本地 `docs/` 目录，未纳入版本库。
 - 后端接口与类的设计遵循面向对象 + 依赖倒置，各层通过抽象接口解耦，便于替换存储与模型供应商。
+
+## 常见问题
+
+- **每个 worktree / 新环境都要复制密钥**：`.env` 被 gitignore，新建 worktree 后需执行 `cp backend/.env .worktrees/<名称>/backend/.env`（或从任意已配置目录复制）。
+- **解析失败提示"requires an authenticated client"**：说明 `MINERU_API_TOKEN` 未配置或为空，检查 `.env` 后重启后端。
+- **提问时引用为空或过多**：检索参数（`NUM_REWRITES`、`RELEVANCE_THRESHOLD`、`RERANK_TOP_N`、`MAX_CITATIONS`）可在 `.env` 调整。
