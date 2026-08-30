@@ -26,7 +26,7 @@ from app.services.rag.context_builder import ContextBuilder
 from app.services.rag.hybrid_retriever import HybridRetriever
 from app.services.rag.pipeline import RAGPipeline
 from app.services.rag.query_rewriter import LLMQueryRewriter
-from app.services.reranking import DashScopeReranker
+from app.services.reranking import DashScopeReranker, Reranker
 from app.vector.base import VectorRepository
 from app.vector.faiss_repo import FaissVectorRepository
 from app.vector.fusion import RRFFusion
@@ -50,6 +50,7 @@ class ServiceContainer:
         chunker: Chunker | None = None,
         vector: VectorRepository | None = None,
         llm_client: LLMClient | None = None,
+        reranker: Reranker | None = None,
     ) -> None:
         self.settings = settings
         self.start_worker = start_worker
@@ -79,9 +80,9 @@ class ServiceContainer:
         )
         self.sparse = BM25SparseIndex()
         self.llm_client = llm_client or LangChainLLMClient(settings.models)
-        self.reranker = DashScopeReranker(settings.models)
+        self.reranker = reranker or DashScopeReranker(settings.models)
         self.fusion = RRFFusion()
-        self.rewriter = LLMQueryRewriter(self.llm_client, settings.retrieval)
+        self.rewriter = LLMQueryRewriter(self.llm_client, settings.rewrite)
         self.hybrid = HybridRetriever(
             self.vector, self.sparse, self.embedding, self.fusion, settings.retrieval
         )
@@ -130,6 +131,7 @@ class ServiceContainer:
         await self.vector.load()
         remaining = await self.chunks.list_all()
         await self.vector.rebuild(remaining)
+        await self.sparse.rebuild(remaining)
         if self.start_worker:
             self._worker_task = asyncio.create_task(self.worker.run())
         logger.info("容器启动完成", extra={"extra_fields": {"data_dir": str(storage.data_dir)}})

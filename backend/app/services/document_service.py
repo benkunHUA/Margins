@@ -115,7 +115,7 @@ class DocumentService:
                 await asyncio.to_thread(_safe_unlink, path)
         remaining = await self._chunks.list_all()
         await self._vector.rebuild(remaining)
-        # M3: 同步 sparse.rebuild
+        await self._sparse.rebuild(remaining)
 
     async def reparse(self, doc_id: UUID) -> dict:
         doc = await self.get(doc_id)

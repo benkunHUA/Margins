@@ -28,7 +28,11 @@ class FakeVector:
 
 
 class FakeSparse:
-    pass
+    def __init__(self) -> None:
+        self.rebuild_calls = 0
+
+    async def rebuild(self, chunks) -> None:
+        self.rebuild_calls += 1
 
 
 def _settings(tmp_path) -> Settings:

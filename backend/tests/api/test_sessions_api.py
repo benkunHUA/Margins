@@ -8,6 +8,7 @@ from app.core.container import ServiceContainer
 from app.main import create_app
 from app.services.embedding import EmbeddingService
 from app.services.llm import LLMClient
+from app.services.reranking import Reranker
 
 
 class FakeEmbeddings(EmbeddingService):
@@ -27,6 +28,11 @@ class FakeLLM(LLMClient):
         return ""
 
 
+class FakeReranker(Reranker):
+    async def rerank(self, query, candidates, *, top_n, threshold):
+        return list(candidates)[:top_n]
+
+
 @pytest.fixture
 def client(tmp_path):
     settings = Settings(
@@ -41,6 +47,7 @@ def client(tmp_path):
         start_worker=False,
         embeddings=FakeEmbeddings(),
         llm_client=FakeLLM(),
+        reranker=FakeReranker(),
     )
     app = create_app(settings=settings, container=container)
     with TestClient(app) as test_client:
