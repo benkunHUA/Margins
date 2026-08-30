@@ -12,7 +12,7 @@ from app.repositories.memory.memory_repos import (
     InMemorySessionRepository,
 )
 from app.repositories.sql.chunks import ChunkSqlRepository
-from app.repositories.sql.database import create_engine_and_sessionmaker, init_db
+from app.repositories.sql.database import create_engine_and_sessionmaker, run_migrations
 from app.repositories.sql.documents import DocumentSqlRepository
 from app.repositories.sql.sessions import ParseJobSqlRepository, SessionSqlRepository
 from app.services.chat_service import ChatService
@@ -127,7 +127,7 @@ class ServiceContainer:
         storage.faiss_index_dir.mkdir(parents=True, exist_ok=True)
         storage.parsed_dir.mkdir(parents=True, exist_ok=True)
         if self._engine is not None:
-            await init_db(self._engine)
+            await asyncio.to_thread(run_migrations, storage.data_dir)
         await self.vector.load()
         remaining = await self.chunks.list_all()
         await self.vector.rebuild(remaining)

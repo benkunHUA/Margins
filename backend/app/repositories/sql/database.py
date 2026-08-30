@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import (
@@ -12,6 +14,8 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.repositories.sql.models import Base
+
+BACKEND_DIR = Path(__file__).resolve().parents[3]
 
 
 @event.listens_for(Engine, "connect")
@@ -34,3 +38,10 @@ def create_engine_and_sessionmaker(
 async def init_db(engine: AsyncEngine) -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+
+def run_migrations(data_dir: Path) -> None:
+    """对指定数据目录执行 Alembic upgrade head（同步，调用方放线程）。"""
+    cfg = Config(str(BACKEND_DIR / "alembic.ini"))
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{data_dir / 'margins.db'}")
+    command.upgrade(cfg, "head")

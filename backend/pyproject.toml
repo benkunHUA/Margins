@@ -26,6 +26,7 @@ dependencies = [
   "mineru-open-sdk>=0.2",
   "pypdf>=5",
   "rank-bm25>=0.2",
+  "alembic>=1.13",
   "cryptography>=42,<45",
 ]
 
