@@ -69,6 +69,23 @@ class FakeLLM(LLMClient):
         return ""
 
 
+class FakeRewriter:
+    def __init__(self, queries: list[str] | None = None) -> None:
+        self.queries = queries or ["q"]
+
+    async def rewrite(self, question, history):
+        return self.queries
+
+
+class FakeReranker:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def rerank(self, query, candidates, *, top_n, threshold):
+        self.calls += 1
+        return list(candidates)[:top_n]
+
+
 def _chunk(title: str, content: str) -> Chunk:
     return Chunk(
         id=uuid4(),
@@ -97,6 +114,8 @@ def _pipeline(
     chunks: list[Chunk],
     llm: FakeLLM | None = None,
     config: RetrievalConfig | None = None,
+    rewriter: FakeRewriter | None = None,
+    reranker: FakeReranker | None = None,
 ):
     cfg = config or _config()
     embeddings = FakeEmbeddings()
@@ -105,14 +124,30 @@ def _pipeline(
     )
     llm = llm or FakeLLM()
     rag = RAGPipeline(
-        rewriter=type("Rewriter", (), {})(),
+        rewriter=rewriter or FakeRewriter(),
         hybrid=hybrid,
-        reranker=type("Reranker", (), {})(),
+        reranker=reranker or FakeReranker(),
         context_builder=ContextBuilder(cfg),
         llm_client=llm,
         config=cfg,
     )
     return rag, llm
+
+
+async def test_pipeline_uses_rewrite_merge_and_rerank() -> None:
+    chunks = [_chunk("a.pdf", "内容一"), _chunk("b.pdf", "内容二")]
+    rewriter = FakeRewriter(queries=["q1", "q2"])
+    reranker = FakeReranker()
+    rag, _ = _pipeline(
+        chunks,
+        FakeLLM(tokens=["[1]", "回答"]),
+        rewriter=rewriter,
+        reranker=reranker,
+    )
+    events = [event async for event in rag.run("问题", [])]
+    assert reranker.calls == 1
+    assert any(isinstance(event, DeltaEvent) for event in events)
+    assert isinstance(events[-1], DoneEvent)
 
 
 async def test_citations_arrive_after_deltas_with_only_referenced() -> None:
@@ -190,9 +225,9 @@ async def test_run_emits_error_on_failure() -> None:
         BoomVector([chunk]), EmptySparse(), FakeEmbeddings(), RRFFusion(), cfg
     )
     rag = RAGPipeline(
-        rewriter=type("Rewriter", (), {})(),
+        rewriter=FakeRewriter(),
         hybrid=hybrid,
-        reranker=type("Reranker", (), {})(),
+        reranker=FakeReranker(),
         context_builder=ContextBuilder(cfg),
         llm_client=FakeLLM(),
         config=cfg,

@@ -17,6 +17,7 @@ from app.services.rag.context_builder import ContextBuilder
 from app.services.rag.hybrid_retriever import HybridRetriever
 from app.services.rag.query_rewriter import QueryRewriter
 from app.services.reranking import Reranker
+from app.vector.base import ScoredChunk
 
 CITATION_MARKER = re.compile(r"\[(\d{1,2})\]")
 
@@ -46,8 +47,21 @@ class RAGPipeline:
         final_k: int | None = None,
     ) -> AsyncIterator[RagEvent]:
         try:
-            candidates = await self._hybrid.retrieve(question)
-            top = candidates[: final_k or self._config.final_k]
+            queries = await self._rewriter.rewrite(question, history)
+            merged: dict[str, ScoredChunk] = {}
+            for query in queries:
+                for item in await self._hybrid.retrieve(query):
+                    key = str(item.chunk.id)
+                    if key not in merged or item.score > merged[key].score:
+                        merged[key] = item
+            candidates = list(merged.values())
+            reranked = await self._reranker.rerank(
+                question,
+                candidates,
+                top_n=self._config.rerank_top_n,
+                threshold=self._config.relevance_threshold,
+            )
+            top = reranked[: final_k or self._config.final_k]
             bundle = self._context_builder.build(
                 top,
                 history,

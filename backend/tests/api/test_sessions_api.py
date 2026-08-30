@@ -23,6 +23,9 @@ class FakeLLM(LLMClient):
         for token in ["你好", "！"]:
             yield token
 
+    async def complete(self, messages):
+        return ""
+
 
 @pytest.fixture
 def client(tmp_path):
