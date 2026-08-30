@@ -1,13 +1,17 @@
 """重排序服务：阿里云百炼 qwen3-rerank（dashscope.TextReRank.call，可注入替身）。"""
 
 import asyncio
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
 import dashscope
 
 from app.core.config import ModelConfig
+from app.core.logging import get_logger
 from app.vector.base import ScoredChunk
+
+logger = get_logger(__name__)
 
 
 class Reranker(ABC):
@@ -38,6 +42,8 @@ class DashScopeReranker(Reranker):
         if not candidates:
             return []
 
+        start = time.perf_counter()
+
         def _do() -> list[tuple[int, float]]:
             kwargs = {}
             if self._config.rerank_instruct:
@@ -59,6 +65,34 @@ class DashScopeReranker(Reranker):
             if score >= threshold and 0 <= index < len(candidates):
                 item = candidates[index]
                 result.append(ScoredChunk(chunk=item.chunk, score=score))
+        logger.info(
+            "重排序完成",
+            extra={
+                "extra_fields": {
+                    "event": "rerank",
+                    "candidates": len(candidates),
+                    "top_n": top_n,
+                    "returned": len(result),
+                    "duration_ms": round((time.perf_counter() - start) * 1000, 1),
+                }
+            },
+        )
+        logger.debug(
+            "重排序明细",
+            extra={
+                "extra_fields": {
+                    "event": "rerank_detail",
+                    "items": [
+                        {
+                            "chunk_id": str(item.chunk.id),
+                            "doc_title": item.chunk.metadata.get("doc_title"),
+                            "score": item.score,
+                        }
+                        for item in result
+                    ],
+                }
+            },
+        )
         return result
 
 

@@ -150,6 +150,18 @@ async def test_pipeline_uses_rewrite_merge_and_rerank() -> None:
     assert isinstance(events[-1], DoneEvent)
 
 
+async def test_pipeline_logs_summary(caplog) -> None:
+    chunks = [_chunk("a.pdf", "内容一")]
+    rag, _ = _pipeline(chunks, FakeLLM(tokens=["[1]", "回答"]))
+    with caplog.at_level("INFO", logger="app.services.rag.pipeline"):
+        events = [event async for event in rag.run("问题", [])]
+    assert isinstance(events[-1], DoneEvent)
+    assert any(
+        getattr(record, "extra_fields", {}).get("event") == "rag_pipeline"
+        for record in caplog.records
+    )
+
+
 async def test_citations_arrive_after_deltas_with_only_referenced() -> None:
     chunks = [
         _chunk("a.pdf", "合同约定违约金为 10%。"),

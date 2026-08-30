@@ -39,3 +39,19 @@ async def test_rerank_orders_and_filters_by_threshold() -> None:
 async def test_rerank_empty_candidates() -> None:
     reranker = DashScopeReranker(ModelConfig(rerank_model="qwen3-rerank"), call=_fake_call)
     assert await reranker.rerank("q", [], top_n=2, threshold=0.0) == []
+
+
+async def test_rerank_logs_event(caplog) -> None:
+    a = _chunk("相关")
+    reranker = DashScopeReranker(ModelConfig(rerank_model="qwen3-rerank"), call=_fake_call)
+    with caplog.at_level("INFO", logger="app.services.reranking"):
+        await reranker.rerank(
+            "q",
+            [ScoredChunk(chunk=a, score=0.5)],
+            top_n=1,
+            threshold=0.0,
+        )
+    assert any(
+        getattr(record, "extra_fields", {}).get("event") == "rerank"
+        for record in caplog.records
+    )

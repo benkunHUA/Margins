@@ -2,12 +2,16 @@
 
 import json
 import re
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
 from app.core.config import RewriteConfig
+from app.core.logging import get_logger
 from app.domain.entities import Message
 from app.services.llm import ChatMessage, LLMClient
+
+logger = get_logger(__name__)
 
 SYSTEM_PROMPT = (
     "你是检索查询改写助手。根据对话历史，把用户最新问题改写成多条'可直接检索'的查询。"
@@ -30,6 +34,7 @@ class LLMQueryRewriter(QueryRewriter):
         self._config = config
 
     async def rewrite(self, question: str, history: Sequence[Message]) -> list[str]:
+        start = time.perf_counter()
         queries: list[str] = []
         try:
             history_lines = "\n".join(
@@ -58,7 +63,20 @@ class LLMQueryRewriter(QueryRewriter):
             if query.strip():
                 result.append(query.strip())
                 quota -= 1
-        return result or [question]
+        result = result or [question]
+        logger.info(
+            "查询重写完成",
+            extra={
+                "extra_fields": {
+                    "event": "rewrite",
+                    "question": question,
+                    "history_count": len(history),
+                    "queries": result,
+                    "duration_ms": round((time.perf_counter() - start) * 1000, 1),
+                }
+            },
+        )
+        return result
 
 
 def _parse_queries(text: str) -> list[str]:

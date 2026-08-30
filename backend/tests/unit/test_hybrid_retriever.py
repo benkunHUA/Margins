@@ -90,3 +90,20 @@ async def test_hybrid_threshold_filters_dense() -> None:
     )
     results = await hybrid.retrieve("q")
     assert all(item.chunk.id == a.id for item in results)
+
+
+async def test_hybrid_logs_event(caplog) -> None:
+    a = _chunk("违约 合同")
+    hybrid = HybridRetriever(
+        DenseVector([a]),
+        Sparse([a]),
+        FakeEmbeddings(),
+        RRFFusion(),
+        _config(),
+    )
+    with caplog.at_level("INFO", logger="app.services.rag.hybrid_retriever"):
+        await hybrid.retrieve("q")
+    assert any(
+        getattr(record, "extra_fields", {}).get("event") == "hybrid"
+        for record in caplog.records
+    )

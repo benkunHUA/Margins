@@ -42,3 +42,13 @@ async def test_rewrite_caps_queries() -> None:
     llm = FakeLLM('{"queries": ["q1", "q2", "q3", "q4"]}')
     result = await _rewriter(llm, max_queries=3).rewrite("q", [])
     assert result == ["q", "q1", "q2"]
+
+
+async def test_rewrite_logs_event(caplog) -> None:
+    llm = FakeLLM('{"queries": ["q1"]}')
+    with caplog.at_level("INFO", logger="app.services.rag.query_rewriter"):
+        await _rewriter(llm).rewrite("q", [])
+    assert any(
+        getattr(record, "extra_fields", {}).get("event") == "rewrite"
+        for record in caplog.records
+    )
