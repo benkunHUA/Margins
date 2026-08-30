@@ -1,45 +1,53 @@
-"""Embedding 服务测试（注入 fake client，不触网）。"""
+"""Embedding 服务测试（注入 fake call，不触网）。"""
 
 from app.core.config import ModelConfig
 from app.services.embedding import DashScopeEmbeddingService
 
 
-class FakeEmbeddingsClient:
-    def __init__(self) -> None:
-        self.embedded_docs: list[list[str]] = []
-        self.embedded_queries: list[str] = []
-
-    def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        self.embedded_docs.append(texts)
-        return [[float(ord(c)) for c in text[:2]] for text in texts]
-
-    def embed_query(self, text: str) -> list[float]:
-        self.embedded_queries.append(text)
-        return [float(ord(c)) for c in text[:2]]
+def _fake_call(model, input, **kwargs):
+    texts = input if isinstance(input, list) else [input]
+    return {
+        "output": {
+            "embeddings": [
+                {"text_index": i, "embedding": [float(i + 1), 0.0]}
+                for i in range(len(texts))
+            ]
+        }
+    }
 
 
-def _service() -> tuple[DashScopeEmbeddingService, FakeEmbeddingsClient]:
-    client = FakeEmbeddingsClient()
-    config = ModelConfig(dashscope_api_key="test", embedding_model="text-embedding-v4")
-    return DashScopeEmbeddingService(config, client=client), client
+def _service() -> tuple[DashScopeEmbeddingService, list]:
+    calls: list = []
+
+    def call(model, input, **kwargs):
+        calls.append(input)
+        return _fake_call(model, input, **kwargs)
+
+    config = ModelConfig(
+        dashscope_api_key="test",
+        embedding_model="text-embedding-v4",
+        embedding_dimension=2,
+    )
+    return DashScopeEmbeddingService(config, call=call), calls
 
 
 async def test_embed_texts_batches_by_16() -> None:
-    service, client = _service()
+    service, calls = _service()
     texts = [f"t{i}" for i in range(20)]
     vectors = await service.embed_texts(texts)
     assert len(vectors) == 20
-    assert client.embedded_docs == [texts[:16], texts[16:]]
+    assert calls == [texts[:16], texts[16:]]
+    assert vectors[0] == [1.0, 0.0]
 
 
 async def test_embed_texts_empty_returns_empty() -> None:
-    service, client = _service()
+    service, calls = _service()
     assert await service.embed_texts([]) == []
-    assert client.embedded_docs == []
+    assert calls == []
 
 
 async def test_embed_query() -> None:
-    service, client = _service()
+    service, calls = _service()
     vector = await service.embed_query("问题")
-    assert client.embedded_queries == ["问题"]
-    assert vector == [float(ord("问")), float(ord("题"))]
+    assert calls == ["问题"]
+    assert vector == [1.0, 0.0]

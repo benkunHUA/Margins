@@ -1,60 +1,44 @@
-"""BM25 稀疏索引（langchain BM25Retriever，进程内内存语料）。"""
+"""BM25 稀疏索引（rank_bm25 直连，进程内内存语料）。"""
 
 import asyncio
+import re
 from collections.abc import Sequence
-from uuid import UUID
 
-from langchain_community.retrievers import BM25Retriever
+from rank_bm25 import BM25Okapi
 
 from app.domain.entities import Chunk
 from app.vector.base import ScoredChunk, SparseIndex
 
 
+def _tokenize(text: str) -> list[str]:
+    return re.findall(r"[\w\u4e00-\u9fff]+", text.lower())
+
+
 class BM25SparseIndex(SparseIndex):
     def __init__(self) -> None:
-        self._retriever: BM25Retriever | None = None
+        self._chunks: list[Chunk] = []
+        self._bm25: BM25Okapi | None = None
 
     async def rebuild(self, chunks: Sequence[Chunk]) -> None:
         def _do() -> None:
-            if not chunks:
-                self._retriever = None
-                return
-            self._retriever = BM25Retriever.from_texts(
-                [c.content for c in chunks],
-                metadatas=[
-                    {
-                        "chunk_id": str(c.id),
-                        "document_id": str(c.document_id),
-                        "chunk_index": c.chunk_index,
-                    }
-                    for c in chunks
-                ],
-                ids=[str(c.id) for c in chunks],
+            self._chunks = list(chunks)
+            self._bm25 = (
+                BM25Okapi([_tokenize(c.content) for c in chunks]) if chunks else None
             )
 
         await asyncio.to_thread(_do)
 
     async def search(self, query: str, k: int) -> list[ScoredChunk]:
-        if self._retriever is None:
+        if self._bm25 is None or not self._chunks:
             return []
 
         def _do() -> list[ScoredChunk]:
-            self._retriever.k = k
-            docs = self._retriever.invoke(query)
-            results: list[ScoredChunk] = []
-            for doc in docs:
-                meta = doc.metadata
-                results.append(
-                    ScoredChunk(
-                        chunk=Chunk(
-                            id=UUID(meta["chunk_id"]),
-                            document_id=UUID(meta["document_id"]),
-                            chunk_index=meta.get("chunk_index", 0),
-                            content=doc.page_content,
-                        ),
-                        score=0.0,
-                    )
-                )
-            return results
+            scores = self._bm25.get_scores(_tokenize(query))
+            indexes = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:k]
+            return [
+                ScoredChunk(chunk=self._chunks[i], score=float(scores[i]))
+                for i in indexes
+                if scores[i] > 0
+            ]
 
         return await asyncio.to_thread(_do)
