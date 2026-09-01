@@ -42,9 +42,7 @@ class ContextBuilder:
             )
             refs.append(
                 f"【引用 {index}】《{doc_title}》/{chunk.heading_path or '无章节'}\n"
-                f"{'-' * 40}\n"
-                f"{chunk.content}\n"
-                f"{'-' * 40}"
+                f"{chunk.content}"
             )
 
         history_lines = []
