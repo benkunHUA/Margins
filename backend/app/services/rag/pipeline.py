@@ -80,6 +80,18 @@ class RAGPipeline:
                 token_budget=self._config.context_token_budget,
             )
             messages = [ChatMessage(**item) for item in bundle.messages]
+            logger.info(
+                "Prompt 内容",
+                extra={
+                    "extra_fields": {
+                        "event": "prompt",
+                        "messages": [
+                            {"role": message.role, "content": message.content}
+                            for message in messages
+                        ],
+                    }
+                },
+            )
             parts: list[str] = []
             t0 = time.perf_counter()
             async for delta in self._llm_client.stream(messages):

@@ -162,6 +162,22 @@ async def test_pipeline_logs_summary(caplog) -> None:
     )
 
 
+async def test_pipeline_logs_prompt(caplog) -> None:
+    chunks = [_chunk("a.pdf", "违约金条款内容")]
+    rag, _ = _pipeline(chunks, FakeLLM(tokens=["[1]", "回答"]))
+    with caplog.at_level("INFO", logger="app.services.rag.pipeline"):
+        events = [event async for event in rag.run("违约金多少？", [])]
+    assert isinstance(events[-1], DoneEvent)
+    prompt_log = next(
+        record
+        for record in caplog.records
+        if getattr(record, "extra_fields", {}).get("event") == "prompt"
+    )
+    messages = prompt_log.extra_fields["messages"]
+    assert messages[0]["role"] == "system"
+    assert "违约金多少？" in messages[-1]["content"]
+
+
 async def test_citations_arrive_after_deltas_with_only_referenced() -> None:
     chunks = [
         _chunk("a.pdf", "合同约定违约金为 10%。"),
