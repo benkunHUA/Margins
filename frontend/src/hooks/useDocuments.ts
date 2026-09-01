@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -13,17 +14,24 @@ import type { DocumentStatus } from "@/types";
 
 export function useDocuments(page = 1, pageSize = 20, status?: DocumentStatus) {
   const keyword = useDocumentStore((state) => state.keyword);
-  return useQuery({
+  const { data, refetch, isLoading, isError } = useQuery({
     queryKey: ["documents", page, pageSize, keyword, status],
     queryFn: () =>
       listDocuments({ page, page_size: pageSize, q: keyword || undefined, status }),
-    refetchInterval: (query) =>
-      (query.state.data?.items ?? []).some(
-        (doc) => doc.status === "pending" || doc.status === "parsing",
-      )
-        ? 2000
-        : false,
   });
+  const hasActive = (data?.items ?? []).some(
+    (doc) => doc.status === "pending" || doc.status === "parsing",
+  );
+
+  useEffect(() => {
+    if (!hasActive) return;
+    const timer = setInterval(() => {
+      void refetch();
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [hasActive, refetch]);
+
+  return { data, isLoading, isError };
 }
 
 export function useDocument(id: string | null) {
