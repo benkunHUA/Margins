@@ -1,11 +1,33 @@
 """文档分块：Markdown 结构感知切分（按字符近似 token，避免 tiktoken 在线下载）。"""
 
+import html
+import re
 from abc import ABC, abstractmethod
 from uuid import UUID
 
 from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 
 from app.domain.entities import Chunk
+
+TABLE_RE = re.compile(r"<table.*?</table>", re.S)
+
+
+def _tables_to_text(markdown: str) -> str:
+    """把 HTML 表格转成文本行，避免分块把表格切碎。"""
+
+    def convert(match: re.Match) -> str:
+        block = match.group(0)
+        lines: list[str] = []
+        for row in re.findall(r"<tr.*?</tr>", block, re.S):
+            cells = re.findall(r"<t[hd].*?>(.*?)</t[hd]>", row, re.S)
+            cleaned = [
+                html.unescape(re.sub(r"<[^>]+>", "", cell)).strip() for cell in cells
+            ]
+            if any(cleaned):
+                lines.append(" | ".join(cleaned))
+        return "\n".join(lines)
+
+    return TABLE_RE.sub(convert, markdown)
 
 
 class Chunker(ABC):
@@ -31,6 +53,7 @@ class MarkdownChunker(Chunker):
         )
 
     def chunk(self, markdown: str, *, document_id: UUID) -> list[Chunk]:
+        markdown = _tables_to_text(markdown)
         if not markdown.strip():
             return []
 

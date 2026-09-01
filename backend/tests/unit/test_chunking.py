@@ -28,3 +28,16 @@ def test_long_text_is_split_into_multiple_chunks() -> None:
 
 def test_empty_markdown_returns_no_chunks() -> None:
     assert _chunker().chunk("", document_id=uuid4()) == []
+
+
+def test_html_table_is_converted_to_text() -> None:
+    markdown = (
+        "# 标题\n\n"
+        "<table><tr><td>累计回购金额</td><td>2534.45万元</td></tr>"
+        "<tr><td>回购比例</td><td>0.5571%</td></tr></table>\n"
+    )
+    chunks = _chunker().chunk(markdown, document_id=uuid4())
+    text = "".join(chunk.content for chunk in chunks)
+    assert "<table>" not in text
+    assert "累计回购金额 | 2534.45万元" in text
+    assert "回购比例 | 0.5571%" in text
