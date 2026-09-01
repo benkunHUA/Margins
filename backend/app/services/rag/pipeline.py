@@ -72,7 +72,13 @@ class RAGPipeline:
                 threshold=self._config.relevance_threshold,
             )
             rerank_ms = round((time.perf_counter() - t0) * 1000, 1)
-            top = reranked[: final_k or self._config.final_k]
+            capped = self._cap_per_document(reranked, self._config.max_chunks_per_document)
+            capped = [
+                item
+                for item in capped
+                if len(item.chunk.content.strip()) >= self._config.min_chunk_chars
+            ]
+            top = capped[: final_k or self._config.final_k]
             bundle = self._context_builder.build(
                 top,
                 history,
@@ -143,3 +149,18 @@ class RAGPipeline:
                 if len(picked) >= cap:
                     break
         return [citations[i] for i in picked]
+
+    @staticmethod
+    def _cap_per_document(
+        items: Sequence[ScoredChunk],
+        cap: int,
+    ) -> list[ScoredChunk]:
+        counts: dict[str, int] = {}
+        result: list[ScoredChunk] = []
+        for item in items:
+            key = str(item.chunk.document_id)
+            if counts.get(key, 0) >= cap:
+                continue
+            counts[key] = counts.get(key, 0) + 1
+            result.append(item)
+        return result

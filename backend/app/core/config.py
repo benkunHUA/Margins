@@ -47,10 +47,12 @@ class RetrievalConfig(BaseModel):
     sparse_k: int = 30
     rrf_k: int = 60
     fusion_top_n: int = 30
-    rerank_top_n: int = 10
+    rerank_top_n: int = 6
     final_k: int = 10
     relevance_threshold: float = 0.3
     max_citations: int = 5
+    max_chunks_per_document: int = 3
+    min_chunk_chars: int = 30
     history_limit: int = 6
     context_token_budget: int = 12_000
 
@@ -101,10 +103,12 @@ class Settings(BaseSettings):
     sparse_k: int = Field(30, validation_alias="SPARSE_K")
     rrf_k: int = Field(60, validation_alias="RRF_K")
     fusion_top_n: int = Field(30, validation_alias="FUSION_TOP_N")
-    rerank_top_n: int = Field(10, validation_alias="RERANK_TOP_N")
+    rerank_top_n: int = Field(6, validation_alias="RERANK_TOP_N")
     final_k: int = Field(10, validation_alias="FINAL_K")
     relevance_threshold: float = Field(0.3, validation_alias="RELEVANCE_THRESHOLD")
     max_citations: int = Field(5, validation_alias="MAX_CITATIONS")
+    max_chunks_per_document: int = Field(3, validation_alias="MAX_CHUNKS_PER_DOCUMENT")
+    min_chunk_chars: int = Field(30, validation_alias="MIN_CHUNK_CHARS")
     history_limit: int = Field(6, validation_alias="HISTORY_LIMIT")
     context_token_budget: int = Field(12_000, validation_alias="CONTEXT_TOKEN_BUDGET")
 
@@ -147,6 +151,8 @@ class Settings(BaseSettings):
             final_k=self.final_k,
             relevance_threshold=self.relevance_threshold,
             max_citations=self.max_citations,
+            max_chunks_per_document=self.max_chunks_per_document,
+            min_chunk_chars=self.min_chunk_chars,
             history_limit=self.history_limit,
             context_token_budget=self.context_token_budget,
         )

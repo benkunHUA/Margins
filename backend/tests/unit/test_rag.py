@@ -105,6 +105,7 @@ def _config(**overrides) -> RetrievalConfig:
         context_token_budget=12000,
         relevance_threshold=0.3,
         max_citations=5,
+        min_chunk_chars=0,
     )
     defaults.update(overrides)
     return RetrievalConfig(**defaults)
@@ -176,6 +177,37 @@ async def test_pipeline_logs_prompt(caplog) -> None:
     messages = prompt_log.extra_fields["messages"]
     assert messages[0]["role"] == "system"
     assert "违约金多少？" in messages[-1]["content"]
+
+
+def test_cap_per_document_limits_each_document() -> None:
+    doc_a = uuid4()
+    doc_b = uuid4()
+    items = [
+        ScoredChunk(chunk=_chunk("a1", "内容一"), score=0.9),
+        ScoredChunk(chunk=_chunk("a2", "内容二"), score=0.8),
+        ScoredChunk(chunk=_chunk("b1", "内容三"), score=0.7),
+    ]
+    items[0].chunk.document_id = doc_a
+    items[1].chunk.document_id = doc_a
+    items[2].chunk.document_id = doc_b
+    result = RAGPipeline._cap_per_document(items, cap=1)
+    assert len(result) == 2
+    assert {str(item.chunk.document_id) for item in result} == {str(doc_a), str(doc_b)}
+
+
+async def test_pipeline_filters_short_chunks() -> None:
+    chunks = [_chunk("a.pdf", "x")]
+    rag, _ = _pipeline(
+        chunks,
+        FakeLLM(tokens=["[1]", "回答"]),
+        config=_config(min_chunk_chars=30),
+    )
+    events = [event async for event in rag.run("q", [])]
+    citations = next(
+        event.citations for event in events if isinstance(event, CitationsEvent)
+    )
+    assert citations == []
+    assert isinstance(events[-1], DoneEvent)
 
 
 async def test_citations_arrive_after_deltas_with_only_referenced() -> None:
