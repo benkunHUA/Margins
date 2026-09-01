@@ -34,12 +34,12 @@ def _service() -> tuple[DashScopeEmbeddingService, list]:
     return DashScopeEmbeddingService(config, call=call), calls
 
 
-async def test_embed_texts_batches_by_16() -> None:
+async def test_embed_texts_batches_by_10() -> None:
     service, calls = _service()
     texts = [f"t{i}" for i in range(20)]
     vectors = await service.embed_texts(texts)
     assert len(vectors) == 20
-    assert calls == [texts[:16], texts[16:]]
+    assert calls == [texts[:10], texts[10:]]
     assert vectors[0] == [1.0, 0.0]
 
 

@@ -10,6 +10,8 @@ from app.core.config import ModelConfig
 from app.core.exceptions import EmbeddingError
 from app.utils.rate_limit import AsyncTokenBucket
 
+BATCH_SIZE = 10  # text-embedding-v4 单次 input 上限 10 条
+
 
 class EmbeddingService(ABC):
     @abstractmethod
@@ -31,8 +33,8 @@ class DashScopeEmbeddingService(EmbeddingService):
         if not texts:
             return []
         results: list[list[float]] = []
-        for start in range(0, len(texts), 16):
-            batch = list(texts[start : start + 16])
+        for start in range(0, len(texts), BATCH_SIZE):
+            batch = list(texts[start : start + BATCH_SIZE])
             await self._bucket.acquire(len(batch))
             response = await asyncio.to_thread(
                 self._call,
