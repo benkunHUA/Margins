@@ -103,7 +103,8 @@ async def test_hybrid_logs_event(caplog) -> None:
     )
     with caplog.at_level("INFO", logger="app.services.rag.hybrid_retriever"):
         await hybrid.retrieve("q")
-    assert any(
-        getattr(record, "extra_fields", {}).get("event") == "hybrid"
-        for record in caplog.records
+    hybrid_log = next(
+        record for record in caplog.records
+        if getattr(record, "extra_fields", {}).get("event") == "hybrid"
     )
+    assert hybrid_log.extra_fields["results"][0]["chunk_id"] == str(a.id)

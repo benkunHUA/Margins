@@ -73,23 +73,15 @@ class DashScopeReranker(Reranker):
                     "candidates": len(candidates),
                     "top_n": top_n,
                     "returned": len(result),
-                    "duration_ms": round((time.perf_counter() - start) * 1000, 1),
-                }
-            },
-        )
-        logger.debug(
-            "重排序明细",
-            extra={
-                "extra_fields": {
-                    "event": "rerank_detail",
-                    "items": [
+                    "results": [
                         {
                             "chunk_id": str(item.chunk.id),
                             "doc_title": item.chunk.metadata.get("doc_title"),
-                            "score": item.score,
+                            "score": round(item.score, 4),
                         }
-                        for item in result
+                        for item in result[:10]
                     ],
+                    "duration_ms": round((time.perf_counter() - start) * 1000, 1),
                 }
             },
         )

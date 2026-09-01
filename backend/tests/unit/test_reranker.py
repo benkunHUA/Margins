@@ -45,13 +45,14 @@ async def test_rerank_logs_event(caplog) -> None:
     a = _chunk("相关")
     reranker = DashScopeReranker(ModelConfig(rerank_model="qwen3-rerank"), call=_fake_call)
     with caplog.at_level("INFO", logger="app.services.reranking"):
-        await reranker.rerank(
+        result = await reranker.rerank(
             "q",
             [ScoredChunk(chunk=a, score=0.5)],
             top_n=1,
             threshold=0.0,
         )
-    assert any(
-        getattr(record, "extra_fields", {}).get("event") == "rerank"
-        for record in caplog.records
+    rerank_log = next(
+        record for record in caplog.records
+        if getattr(record, "extra_fields", {}).get("event") == "rerank"
     )
+    assert rerank_log.extra_fields["results"][0]["chunk_id"] == str(result[0].chunk.id)

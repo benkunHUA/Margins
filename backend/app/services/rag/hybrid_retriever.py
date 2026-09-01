@@ -50,6 +50,14 @@ class HybridRetriever:
                     "dense_filtered": len(dense),
                     "sparse": len(sparse),
                     "fused": len(fused),
+                    "results": [
+                        {
+                            "chunk_id": str(item.chunk.id),
+                            "doc_title": item.chunk.metadata.get("doc_title"),
+                            "score": round(item.score, 4),
+                        }
+                        for item in fused[:10]
+                    ],
                     "duration_ms": round((time.perf_counter() - start) * 1000, 1),
                 }
             },
