@@ -173,7 +173,10 @@ async def test_pipeline_logs_prompt(caplog) -> None:
     )
     messages = prompt_log.extra_fields["messages"]
     assert messages[0]["role"] == "system"
-    assert "违约金多少？" in messages[-1]["content"]
+    content = messages[-1]["content"]
+    assert "违约金多少？" in content
+    assert "参考资料（共 1 条" in content
+    assert "【引用 1】" in content
 
 
 def test_cap_per_document_limits_each_document() -> None:

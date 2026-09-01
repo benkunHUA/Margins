@@ -41,7 +41,10 @@ class ContextBuilder:
                 )
             )
             refs.append(
-                f"[{index}]《{doc_title}》/{chunk.heading_path or '无章节'}\n{chunk.content}"
+                f"【引用 {index}】《{doc_title}》/{chunk.heading_path or '无章节'}\n"
+                f"{'-' * 40}\n"
+                f"{chunk.content}\n"
+                f"{'-' * 40}"
             )
 
         history_lines = []
@@ -54,7 +57,7 @@ class ContextBuilder:
             "资料不足时明确说明。引用请用 [n] 标注。"
         )
         user = (
-            "参考资料：\n"
+            f"参考资料（共 {len(refs)} 条，每条以【引用 n】开头）：\n"
             + "\n\n".join(refs)
             + "\n\n对话历史：\n"
             + ("\n".join(history_lines) if history_lines else "（无）")
