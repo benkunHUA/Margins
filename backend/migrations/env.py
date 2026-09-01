@@ -1,6 +1,5 @@
 """Alembic 环境：同步 SQLite 迁移，使用我们的 ORM Base 元数据。"""
 
-from logging.config import fileConfig
 from pathlib import Path
 import sys
 
@@ -12,8 +11,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.repositories.sql.models import Base  # noqa: E402
 
 config = context.config
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 
