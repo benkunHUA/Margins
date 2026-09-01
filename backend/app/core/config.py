@@ -68,10 +68,7 @@ class QueueConfig(BaseModel):
 
 
 class RewriteConfig(BaseModel):
-    num_rewrites: int = 2
-    include_original: bool = True
-    hyde_enabled: bool = False
-    max_queries: int = 5
+    enabled: bool = True
     history_limit: int = 6
     temperature: float = 0.2
 
@@ -112,10 +109,7 @@ class Settings(BaseSettings):
     context_token_budget: int = Field(12_000, validation_alias="CONTEXT_TOKEN_BUDGET")
 
     # ----- 查询重写 -----
-    num_rewrites: int = Field(2, validation_alias="NUM_REWRITES")
-    include_original: bool = Field(True, validation_alias="INCLUDE_ORIGINAL")
-    hyde_enabled: bool = Field(False, validation_alias="HYDE_ENABLED")
-    max_queries: int = Field(5, validation_alias="MAX_QUERIES")
+    rewrite_enabled: bool = Field(True, validation_alias="REWRITE_ENABLED")
     rewrite_temperature: float = Field(0.2, validation_alias="REWRITE_TEMPERATURE")
 
     # ----- 任务队列 -----
@@ -175,10 +169,7 @@ class Settings(BaseSettings):
     @property
     def rewrite(self) -> RewriteConfig:
         return RewriteConfig(
-            num_rewrites=self.num_rewrites,
-            include_original=self.include_original,
-            hyde_enabled=self.hyde_enabled,
-            max_queries=self.max_queries,
+            enabled=self.rewrite_enabled,
             history_limit=self.history_limit,
             temperature=self.rewrite_temperature,
         )

@@ -1,4 +1,4 @@
-"""查询重写测试（fake LLM.complete）。"""
+"""查询重写路由测试（fake LLM.complete，单提示词决策）。"""
 
 from app.core.config import RewriteConfig
 from app.services.llm import LLMClient
@@ -19,36 +19,51 @@ class FakeLLM(LLMClient):
 
 
 def _rewriter(llm: FakeLLM, **overrides) -> LLMQueryRewriter:
-    defaults = dict(num_rewrites=2, include_original=True, max_queries=5)
+    defaults = dict(enabled=True, history_limit=6, temperature=0.2)
     defaults.update(overrides)
-    config = RewriteConfig(**defaults)
-    return LLMQueryRewriter(llm, config)
+    return LLMQueryRewriter(llm, RewriteConfig(**defaults))
 
 
-async def test_rewrite_returns_original_plus_queries() -> None:
-    llm = FakeLLM('{"queries": ["违约金是多少？", "合同违约责任条款"]}')
-    result = await _rewriter(llm).rewrite("违约金多少？", [])
-    assert result == ["违约金多少？", "违约金是多少？", "合同违约责任条款"]
-    assert "违约金" in llm.prompts[0]
+async def test_no_rewrite_returns_original() -> None:
+    llm = FakeLLM('{"need_rewrite": false}')
+    result = await _rewriter(llm).rewrite("安旭生物回购进展如何", [])
+    assert result == ["安旭生物回购进展如何"]
+    assert llm.prompts  # 仍做一次决策调用
 
 
-async def test_rewrite_falls_back_on_bad_json() -> None:
-    llm = FakeLLM("不是 JSON")
-    result = await _rewriter(llm).rewrite("q", [])
-    assert result == ["q"]
-
-
-async def test_rewrite_caps_queries() -> None:
-    llm = FakeLLM('{"queries": ["q1", "q2", "q3", "q4"]}')
-    result = await _rewriter(llm, max_queries=3).rewrite("q", [])
-    assert result == ["q", "q1", "q2"]
-
-
-async def test_rewrite_logs_event(caplog) -> None:
-    llm = FakeLLM('{"queries": ["q1"]}')
-    with caplog.at_level("INFO", logger="app.services.rag.query_rewriter"):
-        await _rewriter(llm).rewrite("q", [])
-    assert any(
-        getattr(record, "extra_fields", {}).get("event") == "rewrite"
-        for record in caplog.records
+async def test_rewrite_returns_single_rewritten_query() -> None:
+    llm = FakeLLM(
+        '{"need_rewrite": true, "rewrite_type": "coreference", '
+        '"rewritten_query": "安旭生物回购股份的进展情况如何？"}'
     )
+    result = await _rewriter(llm).rewrite("它的回购进展如何", [])
+    assert result == ["安旭生物回购股份的进展情况如何？"]
+
+
+async def test_bad_json_falls_back_to_original() -> None:
+    llm = FakeLLM("不是 JSON")
+    assert await _rewriter(llm).rewrite("q", []) == ["q"]
+
+
+async def test_disabled_skips_llm() -> None:
+    llm = FakeLLM('{"need_rewrite": true, "rewritten_query": "x"}')
+    result = await _rewriter(llm, enabled=False).rewrite("q", [])
+    assert result == ["q"]
+    assert llm.prompts == []
+
+
+async def test_rewrite_logs_decision(caplog) -> None:
+    llm = FakeLLM(
+        '{"need_rewrite": true, "rewrite_type": "expand", '
+        '"rewritten_query": "安旭生物回购股份进展情况"}'
+    )
+    with caplog.at_level("INFO", logger="app.services.rag.query_rewriter"):
+        await _rewriter(llm).rewrite("介绍下", [])
+    record = next(
+        record
+        for record in caplog.records
+        if getattr(record, "extra_fields", {}).get("event") == "rewrite"
+    )
+    assert record.extra_fields["need_rewrite"] is True
+    assert record.extra_fields["rewrite_type"] == "expand"
+    assert record.extra_fields["queries"] == ["安旭生物回购股份进展情况"]

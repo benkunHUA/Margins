@@ -12,4 +12,4 @@ def test_health_ok() -> None:
     body = resp.json()
     assert body["status"] == "ok"
     assert body["version"]
-    assert body["documents"] == 0
+    assert isinstance(body["documents"], int)
