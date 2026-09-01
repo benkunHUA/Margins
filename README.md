@@ -71,7 +71,7 @@ docker compose up --build
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | OpenAI 兼容 LLM 配置，默认 DeepSeek |
 | `DATA_DIR` | 数据目录（SQLite、Faiss 索引、上传文件） |
 
-检索参数（`DENSE_K`、`SPARSE_K`、`RRF_K`、`RERANK_TOP_N`、`FINAL_K`、`RELEVANCE_THRESHOLD` 等）见 [.env.example](.env.example)。
+检索参数（`RECALL_K`、`RERANK_TOP_N`、`RELEVANCE_THRESHOLD`、`MAX_CHUNKS_PER_DOCUMENT`、`MIN_CHUNK_CHARS`、`MAX_CITATIONS` 等）见 [.env.example](.env.example)。
 
 ## 部署（Docker Compose）
 
@@ -136,4 +136,4 @@ alembic upgrade head                       # 应用迁移
 
 - **每个 worktree / 新环境都要复制密钥**：`.env` 被 gitignore，新建 worktree 后需执行 `cp backend/.env .worktrees/<名称>/backend/.env`（或从任意已配置目录复制）。
 - **解析失败提示"requires an authenticated client"**：说明 `MINERU_API_TOKEN` 未配置或为空，检查 `.env` 后重启后端。
-- **提问时引用为空或过多**：检索参数（`NUM_REWRITES`、`RELEVANCE_THRESHOLD`、`RERANK_TOP_N`、`MAX_CITATIONS`）可在 `.env` 调整。
+- **提问时引用为空或过多**：检索参数（`RECALL_K`、`RELEVANCE_THRESHOLD`、`RERANK_TOP_N`、`MAX_CHUNKS_PER_DOCUMENT`、`MAX_CITATIONS`）可在 `.env` 调整。

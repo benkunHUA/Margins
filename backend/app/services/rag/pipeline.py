@@ -47,8 +47,6 @@ class RAGPipeline:
         self,
         question: str,
         history: Sequence[Message],
-        *,
-        final_k: int | None = None,
     ) -> AsyncIterator[RagEvent]:
         start = time.perf_counter()
         try:
@@ -78,12 +76,11 @@ class RAGPipeline:
                 for item in capped
                 if len(item.chunk.content.strip()) >= self._config.min_chunk_chars
             ]
-            top = capped[: final_k or self._config.final_k]
+            top = capped[: self._config.rerank_top_n]
             bundle = self._context_builder.build(
                 top,
                 history,
                 question,
-                token_budget=self._config.context_token_budget,
             )
             messages = [ChatMessage(**item) for item in bundle.messages]
             logger.info(

@@ -54,7 +54,7 @@ class Sparse(SparseIndex):
 
 
 def _config(**overrides) -> RetrievalConfig:
-    defaults = dict(dense_k=30, sparse_k=30, rrf_k=60, fusion_top_n=30, relevance_threshold=0.3)
+    defaults = dict(recall_k=30, relevance_threshold=0.3)
     defaults.update(overrides)
     return RetrievalConfig(**defaults)
 

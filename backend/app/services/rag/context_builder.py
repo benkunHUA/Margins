@@ -25,12 +25,10 @@ class ContextBuilder:
         chunks: Sequence[ScoredChunk],
         history: Sequence[Message],
         question: str,
-        *,
-        token_budget: int,
     ) -> ContextBundle:
         citations: list[Citation] = []
         refs: list[str] = []
-        for index, item in enumerate(chunks[: self._config.final_k], start=1):
+        for index, item in enumerate(chunks[: self._config.rerank_top_n], start=1):
             chunk = item.chunk
             doc_title = chunk.metadata.get("doc_title") or "未知文档"
             citations.append(

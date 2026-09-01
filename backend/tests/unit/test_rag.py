@@ -99,10 +99,7 @@ def _chunk(title: str, content: str) -> Chunk:
 
 def _config(**overrides) -> RetrievalConfig:
     defaults = dict(
-        dense_k=30,
-        final_k=3,
         history_limit=6,
-        context_token_budget=12000,
         relevance_threshold=0.3,
         max_citations=5,
         min_chunk_chars=0,
