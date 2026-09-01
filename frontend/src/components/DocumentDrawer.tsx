@@ -224,6 +224,12 @@ export default function DocumentDrawer({ documentId, onClose }: DocumentDrawerPr
                         <span className="min-w-0 truncate font-medium text-slate-700">
                           {chunk.heading_path || "（无章节）"}
                         </span>
+                        <span
+                          title={chunk.id}
+                          className="shrink-0 font-mono text-[10px] text-slate-400"
+                        >
+                          {chunk.id.slice(0, 8)}
+                        </span>
                       </span>
                       <span className="shrink-0 text-xs text-slate-400">
                         {chunk.token_count ?? "-"} tokens
