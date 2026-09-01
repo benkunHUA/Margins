@@ -6,7 +6,7 @@ from app.core.exceptions import ParseFailedError
 from app.repositories.base import ChunkRepository
 from app.services.chunking import Chunker
 from app.services.embedding import EmbeddingService
-from app.vector.base import IndexableChunk, VectorRepository
+from app.vector.base import IndexableChunk, SparseIndex, VectorRepository
 
 
 class IndexingPipeline:
@@ -16,11 +16,13 @@ class IndexingPipeline:
         embeddings: EmbeddingService,
         vector: VectorRepository,
         chunks: ChunkRepository,
+        sparse: SparseIndex | None = None,
     ) -> None:
         self._chunker = chunker
         self._embeddings = embeddings
         self._vector = vector
         self._chunks = chunks
+        self._sparse = sparse
 
     async def run(
         self,
@@ -47,3 +49,6 @@ class IndexingPipeline:
                 for chunk, embedding in zip(chunks, embeddings, strict=True)
             ]
         )
+        if self._sparse is not None:
+            remaining = await self._chunks.list_all()
+            await self._sparse.rebuild(remaining)

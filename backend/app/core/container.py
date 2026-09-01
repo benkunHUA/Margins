@@ -95,7 +95,13 @@ class ServiceContainer:
             self.llm_client,
             settings.retrieval,
         )
-        self.indexing = IndexingPipeline(self.chunker, self.embedding, self.vector, self.chunks)
+        self.indexing = IndexingPipeline(
+            self.chunker,
+            self.embedding,
+            self.vector,
+            self.chunks,
+            sparse=self.sparse,
+        )
         self.worker = ParseWorker(
             self.parse_queue,
             self.parser,

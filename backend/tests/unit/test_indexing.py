@@ -21,18 +21,33 @@ class FakeEmbeddingService(EmbeddingService):
         return [1.0, 0.0, 0.0, 0.0]
 
 
+class FakeSparse:
+    def __init__(self) -> None:
+        self.rebuild_calls = 0
+
+    async def rebuild(self, chunks) -> None:
+        self.rebuild_calls += 1
+
+
 @pytest.fixture
 async def pipeline(tmp_path):
     chunks = InMemoryChunkRepository()
     vector = FaissVectorRepository(
         StorageConfig(data_dir=tmp_path), FakeEmbeddingService(), dimension=4
     )
-    pipeline = IndexingPipeline(MarkdownChunker(), FakeEmbeddingService(), vector, chunks)
-    yield pipeline, chunks, vector
+    sparse = FakeSparse()
+    pipeline = IndexingPipeline(
+        MarkdownChunker(),
+        FakeEmbeddingService(),
+        vector,
+        chunks,
+        sparse=sparse,
+    )
+    yield pipeline, chunks, vector, sparse
 
 
 async def test_run_writes_chunks_and_vectors(pipeline) -> None:
-    pipeline, chunks, vector = pipeline
+    pipeline, chunks, vector, _ = pipeline
     doc_id = uuid4()
     await pipeline.run("# 标题\n\n正文内容", document_id=doc_id)
 
@@ -45,7 +60,7 @@ async def test_run_writes_chunks_and_vectors(pipeline) -> None:
 
 
 async def test_run_is_idempotent_for_same_document(pipeline) -> None:
-    pipeline, chunks, _ = pipeline
+    pipeline, chunks, _, _ = pipeline
     doc_id = uuid4()
     await pipeline.run("# 标题\n\n正文", document_id=doc_id)
     first_count = len(await chunks.list_by_document(doc_id))
@@ -56,6 +71,12 @@ async def test_run_is_idempotent_for_same_document(pipeline) -> None:
 
 
 async def test_empty_markdown_raises(pipeline) -> None:
-    pipeline, _, _ = pipeline
+    pipeline, _, _, _ = pipeline
     with pytest.raises(ParseFailedError):
         await pipeline.run("", document_id=uuid4())
+
+
+async def test_run_rebuilds_sparse_index(pipeline) -> None:
+    pipeline, _, _, sparse = pipeline
+    await pipeline.run("# 标题\n\n正文", document_id=uuid4())
+    assert sparse.rebuild_calls == 1
