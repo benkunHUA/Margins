@@ -66,7 +66,15 @@ def _parse_embeddings(response, expected: int) -> list[list[float]]:
     output = _field(response, "output")
     items = _field(output, "embeddings")
     if not items:
-        raise EmbeddingError("embedding 响应为空")
+        status = _field(response, "status_code", "") or ""
+        code = _field(response, "code", "") or ""
+        message = _field(response, "message", "") or ""
+        detail = (
+            f"status={status}, code={code}, message={message}"
+            if (status or code or message)
+            else "响应为空"
+        )
+        raise EmbeddingError(f"embedding 调用失败: {detail}")
     ordered = sorted(items, key=lambda item: int(_field(item, "text_index", 0)))
     vectors = [list(_field(item, "embedding", [])) for item in ordered]
     if len(vectors) < expected:

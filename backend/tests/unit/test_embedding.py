@@ -1,6 +1,9 @@
 """Embedding 服务测试（注入 fake call，不触网）。"""
 
+import pytest
+
 from app.core.config import ModelConfig
+from app.core.exceptions import EmbeddingError
 from app.services.embedding import DashScopeEmbeddingService
 
 
@@ -51,3 +54,19 @@ async def test_embed_query() -> None:
     vector = await service.embed_query("问题")
     assert calls == ["问题"]
     assert vector == [1.0, 0.0]
+
+
+async def test_embed_error_surfaces_api_message() -> None:
+    def call(model, input, **kwargs):
+        return {
+            "status_code": 401,
+            "code": "InvalidApiKey",
+            "message": "bad key",
+        }
+
+    service = DashScopeEmbeddingService(
+        ModelConfig(dashscope_api_key="x", embedding_model="m", embedding_dimension=2),
+        call=call,
+    )
+    with pytest.raises(EmbeddingError, match="InvalidApiKey"):
+        await service.embed_texts(["a"])
