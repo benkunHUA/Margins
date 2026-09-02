@@ -1,7 +1,7 @@
 """Alembic 环境：同步 SQLite 迁移，使用我们的 ORM Base 元数据。"""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
