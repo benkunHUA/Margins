@@ -171,3 +171,49 @@ async def test_parse_failure_reports_real_error_with_token_hint(tmp_path: Path) 
         await parser.parse(f, file_type="pdf")
     with pytest.raises(ValueError, match="MINERU_API_TOKEN"):
         await parser.parse(f, file_type="pdf")
+
+
+class FakeMineruClientWithImages(FakeMineruClient):
+    def __init__(self, images: list[dict] | None = None) -> None:
+        super().__init__()
+        self._images = images or []
+
+    def extract(self, source: str, **kwargs) -> dict:
+        self.extract_sources.append(source)
+        return {
+            "markdown": "# extract 结果\n\n![](images/a.png)",
+            "state": "done",
+            "images": self._images,
+        }
+
+
+async def test_extract_persists_images_into_images_dir(tmp_path: Path) -> None:
+    client = FakeMineruClientWithImages([{"name": "a.png", "data": b"\x89PNG-image-data"}])
+    parser = MineruOnlineParser(ParserConfig(mineru_api_token="t"), client=client)
+    f = tmp_path / "many.pdf"
+    f.write_bytes(_build_pdf(21))
+    images_dir = tmp_path / "out" / "images"
+
+    result = await parser.parse(f, file_type="pdf", images_dir=images_dir)
+
+    assert result.images == [images_dir / "a.png"]
+    assert (images_dir / "a.png").read_bytes() == b"\x89PNG-image-data"
+    assert "![](images/a.png)" in result.markdown
+
+
+async def test_force_extract_bypasses_flash_route(tmp_path: Path) -> None:
+    client = FakeMineruClient()
+    parser = MineruOnlineParser(ParserConfig(mineru_api_token="t"), client=client)
+    f = tmp_path / "few.pdf"
+    f.write_bytes(_build_pdf(1))
+
+    result = await parser.parse(f, file_type="pdf", force_extract=True)
+
+    assert result.markdown == "# extract 结果"
+    assert client.extract_sources == [str(f)]
+    assert client.flash_sources == []
+
+
+def test_supports_full_extract_depends_on_token() -> None:
+    assert MineruOnlineParser(ParserConfig(mineru_api_token="t")).supports_full_extract is True
+    assert MineruOnlineParser(ParserConfig(mineru_api_token="")).supports_full_extract is False

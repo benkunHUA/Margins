@@ -19,7 +19,19 @@ class ParsedDocument(BaseModel):
 
 class MineruParser(ABC):
     @abstractmethod
-    async def parse(self, file_path: Path, *, file_type: str) -> ParsedDocument: ...
+    async def parse(
+        self,
+        file_path: Path,
+        *,
+        file_type: str,
+        images_dir: Path | None = None,
+        force_extract: bool = False,
+    ) -> ParsedDocument: ...
+
+    @property
+    def supports_full_extract(self) -> bool:
+        """完整 extract 通道是否可用（需要 MinerU API Token）。"""
+        return False
 
 
 class MineruOnlineParser(MineruParser):
@@ -30,18 +42,32 @@ class MineruOnlineParser(MineruParser):
         self._config = config
         self._client = client or MinerU(config.mineru_api_token)
 
-    async def parse(self, file_path: Path, *, file_type: str) -> ParsedDocument:
+    @property
+    def supports_full_extract(self) -> bool:
+        return bool(self._config.mineru_api_token)
+
+    async def parse(
+        self,
+        file_path: Path,
+        *,
+        file_type: str,
+        images_dir: Path | None = None,
+        force_extract: bool = False,
+    ) -> ParsedDocument:
         size_mb = file_path.stat().st_size / 1024 / 1024
         pages = _count_pdf_pages(file_path)
         source = str(file_path)
-        if _should_use_flash(size_mb, pages, self._config):
+        if not force_extract and _should_use_flash(size_mb, pages, self._config):
             result = await asyncio.to_thread(self._client.flash_extract, source)
         else:
             result = await asyncio.to_thread(self._client.extract, source)
 
         markdown = _markdown(result)
         if _state(result) == "done" and markdown:
-            return _to_parsed(result, markdown)
+            images: list[Path] = []
+            if images_dir is not None:
+                images = await asyncio.to_thread(_persist_images, result, images_dir)
+            return ParsedDocument(markdown=markdown, images=images, meta=_meta(result))
         raise ValueError(_failure_message(file_path, result))
 
 
@@ -79,11 +105,25 @@ def _state(result) -> str:
     return _field(result, "state", "") or ""
 
 
-def _to_parsed(result, markdown: str) -> ParsedDocument:
-    meta: dict[str, Any] = {}
+def _meta(result) -> dict[str, Any]:
     if isinstance(result, dict):
-        meta = {k: v for k, v in result.items() if k != "markdown"}
-    return ParsedDocument(markdown=markdown, meta=meta)
+        return {k: v for k, v in result.items() if k not in ("markdown", "images")}
+    return {}
+
+
+def _persist_images(result, images_dir: Path) -> list[Path]:
+    """把 extract 结果里的图片字节落盘，返回保存后的路径列表。"""
+    images_dir.mkdir(parents=True, exist_ok=True)
+    saved: list[Path] = []
+    for image in _field(result, "images") or []:
+        name = Path(str(_field(image, "name", ""))).name
+        data = _field(image, "data")
+        if not name or not isinstance(data, bytes):
+            continue
+        target = images_dir / name
+        target.write_bytes(data)
+        saved.append(target)
+    return saved
 
 
 def _failure_message(file_path: Path, result) -> str:
