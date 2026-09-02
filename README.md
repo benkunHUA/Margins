@@ -8,6 +8,7 @@
 - 多轮问答：会话管理、SSE 流式输出
 - 引用溯源：回答附带来源文档、章节与原文片段
 - 检索管线：查询重写 → 混合检索 → 重排序 → 上下文组装
+- 图片理解：MinerU 提取 PDF 图片 → 百炼 qwen3.8-max 生成中文文字总结 → 随正文一起分块入库检索（纯文字文档仍走免费 flash 快通道）
 
 ## 技术栈
 
@@ -70,6 +71,7 @@ docker compose up --build
 | `MINERU_API_TOKEN` | MinerU 在线解析 Token（[获取](https://mineru.net/apiManage/token)） |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | OpenAI 兼容 LLM 配置，默认 DeepSeek |
 | `DATA_DIR` | 数据目录（SQLite、Faiss 索引、上传文件） |
+| `IMAGE_SUMMARY_*` | 图片文字总结配置（开关 / qwen3.8-max 模型 / 数量上限 / 大小阈值 / 温度 / 思考模式），见 [.env.example](.env.example) |
 
 检索参数（`RECALL_K`、`RERANK_TOP_N`、`RELEVANCE_THRESHOLD`、`MAX_CHUNKS_PER_DOCUMENT`、`MIN_CHUNK_CHARS`、`MAX_CITATIONS` 等）见 [.env.example](.env.example)。
 
