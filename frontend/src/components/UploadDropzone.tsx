@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { UploadCloud } from "lucide-react";
 
 import { useUploadDocuments } from "@/hooks/useDocuments";
@@ -11,7 +11,15 @@ export default function UploadDropzone() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const upload = useUploadDocuments();
+
+  useEffect(() => {
+    if (!upload.isSuccess) return;
+    setSuccessMessage(`已上传 ${upload.data.length} 个文件，开始解析…`);
+    const timer = setTimeout(() => setSuccessMessage(null), 6000);
+    return () => clearTimeout(timer);
+  }, [upload.isSuccess, upload.data]);
 
   const handleFiles = (files: File[]) => {
     if (files.length === 0) return;
@@ -63,11 +71,7 @@ export default function UploadDropzone() {
         }}
       />
       {upload.isPending && <p className="mt-3 text-xs text-sky-600">正在上传…</p>}
-      {upload.isSuccess && (
-        <p className="mt-3 text-xs text-emerald-600">
-          已上传 {upload.data.length} 个文件，开始解析…
-        </p>
-      )}
+      {successMessage && <p className="mt-3 text-xs text-emerald-600">{successMessage}</p>}
       {validationError && <p className="mt-3 text-xs text-red-600">{validationError}</p>}
       {upload.isError && <p className="mt-3 text-xs text-red-600">{upload.error.message}</p>}
     </div>
