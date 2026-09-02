@@ -65,3 +65,8 @@ class NotImplementedStageError(AppError):
 
     code = "NOT_IMPLEMENTED"
     status_code = 501
+
+
+class ImageSummaryError(AppError):
+    code = "IMAGE_SUMMARY_ERROR"
+    status_code = 502

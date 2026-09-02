@@ -70,6 +70,19 @@ class RewriteConfig(BaseModel):
     temperature: float = 0.2
 
 
+class ImageSummaryConfig(BaseModel):
+    """图片文字总结（M5-1）：MinerU 取图 → qwen3.8-max VLM 总结 → 入库。"""
+
+    api_key: str = ""
+    enabled: bool = True
+    model: str = "qwen3.8-max"
+    max_images: int = 10
+    min_bytes: int = 5120
+    temperature: float = 0.2
+    thinking: bool = False
+    max_tokens: int = 800
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -105,6 +118,14 @@ class Settings(BaseSettings):
     # ----- 查询重写 -----
     rewrite_enabled: bool = Field(True, validation_alias="REWRITE_ENABLED")
     rewrite_temperature: float = Field(0.2, validation_alias="REWRITE_TEMPERATURE")
+
+    # ----- 图片文字总结 -----
+    image_summary_enabled: bool = Field(True, validation_alias="IMAGE_SUMMARY_ENABLED")
+    image_summary_model: str = Field("qwen3.8-max", validation_alias="IMAGE_SUMMARY_MODEL")
+    image_summary_max_images: int = Field(10, validation_alias="IMAGE_SUMMARY_MAX_IMAGES")
+    image_summary_min_bytes: int = Field(5120, validation_alias="IMAGE_SUMMARY_MIN_BYTES")
+    image_summary_temperature: float = Field(0.2, validation_alias="IMAGE_SUMMARY_TEMPERATURE")
+    image_summary_thinking: bool = Field(False, validation_alias="IMAGE_SUMMARY_THINKING")
 
     # ----- 任务队列 -----
     queue_concurrency: int = Field(2, validation_alias="QUEUE__CONCURRENCY")
@@ -163,4 +184,16 @@ class Settings(BaseSettings):
             enabled=self.rewrite_enabled,
             history_limit=self.history_limit,
             temperature=self.rewrite_temperature,
+        )
+
+    @property
+    def image_summary(self) -> ImageSummaryConfig:
+        return ImageSummaryConfig(
+            api_key=self.dashscope_api_key,
+            enabled=self.image_summary_enabled,
+            model=self.image_summary_model,
+            max_images=self.image_summary_max_images,
+            min_bytes=self.image_summary_min_bytes,
+            temperature=self.image_summary_temperature,
+            thinking=self.image_summary_thinking,
         )
