@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -113,6 +114,8 @@ class DocumentService:
         for path in (doc.file_path, doc.markdown_path):
             if path is not None:
                 await asyncio.to_thread(_safe_unlink, path)
+        images_dir = self._settings.storage.parsed_dir / f"{doc.id}.images"
+        await asyncio.to_thread(_safe_rmtree, images_dir)
         remaining = await self._chunks.list_all()
         await self._vector.rebuild(remaining)
         await self._sparse.rebuild(remaining)
@@ -134,3 +137,7 @@ def _safe_unlink(path: Path) -> None:
         path.unlink(missing_ok=True)
     except OSError:
         pass
+
+
+def _safe_rmtree(path: Path) -> None:
+    shutil.rmtree(path, ignore_errors=True)

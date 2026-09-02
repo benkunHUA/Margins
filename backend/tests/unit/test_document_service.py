@@ -104,3 +104,17 @@ async def test_reparse_resets_and_enqueues(service) -> None:
     assert updated.status == DocumentStatus.PENDING
     assert job["status"] == "queued"
     assert await queue.get() == doc.id
+
+
+async def test_delete_removes_images_dir(service) -> None:
+    svc, documents, _, _, _, _ = service
+    results = await svc.upload([UploadFile(filename="a.md", file=io.BytesIO(b"# hello"))])
+    doc = await documents.get(results[0]["document_id"])
+    # data/uploads/<id>.md → data/parsed/<id>.images
+    images_dir = Path(doc.file_path).parent.parent / "parsed" / f"{doc.id}.images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+    (images_dir / "chart.png").write_bytes(b"x")
+
+    await svc.delete(doc.id)
+
+    assert not images_dir.exists()

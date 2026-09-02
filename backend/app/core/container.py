@@ -19,6 +19,7 @@ from app.services.chat_service import ChatService
 from app.services.chunking import Chunker, MarkdownChunker
 from app.services.document_service import DocumentService
 from app.services.embedding import DashScopeEmbeddingService, EmbeddingService
+from app.services.image_summarizer import DashScopeImageSummarizer, ImageSummarizer
 from app.services.indexing import IndexingPipeline
 from app.services.llm import LangChainLLMClient, LLMClient
 from app.services.parsing import MineruOnlineParser, MineruParser
@@ -51,6 +52,7 @@ class ServiceContainer:
         vector: VectorRepository | None = None,
         llm_client: LLMClient | None = None,
         reranker: Reranker | None = None,
+        image_summarizer: ImageSummarizer | None = None,
     ) -> None:
         self.settings = settings
         self.start_worker = start_worker
@@ -81,6 +83,9 @@ class ServiceContainer:
         self.sparse = BM25SparseIndex()
         self.llm_client = llm_client or LangChainLLMClient(settings.models)
         self.reranker = reranker or DashScopeReranker(settings.models)
+        self.image_summarizer = image_summarizer or DashScopeImageSummarizer(
+            settings.image_summary
+        )
         self.fusion = RRFFusion()
         self.rewriter = LLMQueryRewriter(self.llm_client, settings.rewrite)
         self.hybrid = HybridRetriever(
@@ -110,6 +115,8 @@ class ServiceContainer:
             self.jobs,
             settings.queue,
             settings.storage,
+            image_summarizer=self.image_summarizer,
+            image_config=settings.image_summary,
         )
         self.document_service = DocumentService(
             self.documents,
