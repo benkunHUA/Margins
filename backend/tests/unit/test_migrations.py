@@ -17,6 +17,7 @@ def test_migrations_create_all_tables(tmp_path) -> None:
         "sessions",
         "messages",
         "parse_jobs",
+        "query_logs",
         "alembic_version",
     } <= tables
     engine.dispose()

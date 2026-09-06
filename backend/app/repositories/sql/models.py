@@ -75,3 +75,19 @@ class MessageRow(Base):
     content: Mapped[str] = mapped_column(Text)
     citations: Mapped[str] = mapped_column(Text, default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class QueryLogRow(Base):
+    __tablename__ = "query_logs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(36), index=True)
+    session_title: Mapped[str] = mapped_column(String(255), default="")
+    question: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="success")
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    total_ms: Mapped[int] = mapped_column(Integer, default=0)
+    answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    steps_json: Mapped[str] = mapped_column(Text, default="[]")
+    citations_json: Mapped[str] = mapped_column(Text, default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
