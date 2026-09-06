@@ -27,3 +27,6 @@ docs/
 
 # git 工作区（实施计划执行用）
 .worktrees/
+
+# 头脑风暴视觉伴侣（本地 mockup，不入库）
+.superpowers/
