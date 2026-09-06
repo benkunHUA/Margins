@@ -12,7 +12,7 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
 
 export default function App() {
   return (
-    <div className="flex min-h-screen bg-slate-50 text-slate-900">
+    <div className="flex h-screen overflow-hidden bg-slate-50 text-slate-900">
       <aside className="flex w-56 shrink-0 flex-col border-r border-slate-200 bg-white px-3 py-4">
         <h1 className="mb-6 px-3 text-lg font-semibold tracking-tight">Margins 知识库</h1>
         <nav className="flex flex-col gap-1">
@@ -30,7 +30,7 @@ export default function App() {
           </NavLink>
         </nav>
       </aside>
-      <main className="min-w-0 flex-1">
+      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
         <Routes>
           <Route path="/" element={<DocumentsPage />} />
           <Route path="/chat" element={<ChatPage />} />
