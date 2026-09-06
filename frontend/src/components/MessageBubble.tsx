@@ -29,7 +29,11 @@ export default function MessageBubble({ message, streaming = false }: MessageBub
             {message.citations.length > 0 && (
               <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
                 {message.citations.map((citation, index) => (
-                  <CitationCard key={citation.chunk_id} index={index + 1} citation={citation} />
+                  <CitationCard
+                    key={citation.chunk_id}
+                    index={citation.reference_index ?? index + 1}
+                    citation={citation}
+                  />
                 ))}
               </div>
             )}

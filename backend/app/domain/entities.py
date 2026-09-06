@@ -23,6 +23,7 @@ class Citation(BaseModel):
     doc_title: str
     heading_path: str | None = None
     snippet: str
+    reference_index: int | None = None
 
 
 class QueryLogStep(BaseModel):

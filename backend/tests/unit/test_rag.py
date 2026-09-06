@@ -232,6 +232,36 @@ async def test_citations_arrive_after_deltas_with_only_referenced() -> None:
     assert "违约金" in llm.received[-1].content
 
 
+async def test_citations_parse_chinese_reference_markers_and_keep_index() -> None:
+    chunks = [
+        _chunk("a.pdf", "内容一"),
+        _chunk("b.pdf", "内容二"),
+        _chunk("c.pdf", "内容三"),
+    ]
+    rag, _ = _pipeline(chunks, FakeLLM(tokens=["根据", "[引用2]", "回答"]))
+
+    events = [event async for event in rag.run("q", [])]
+    citations = next(e.citations for e in events if isinstance(e, CitationsEvent))
+
+    assert len(citations) == 1
+    assert citations[0].doc_title == "b.pdf"
+    assert citations[0].reference_index == 2
+
+
+async def test_citations_parse_fullwidth_brackets() -> None:
+    chunks = [
+        _chunk("a.pdf", "内容一"),
+        _chunk("b.pdf", "内容二"),
+    ]
+    rag, _ = _pipeline(chunks, FakeLLM(tokens=["见", "【1】", "内容"]))
+
+    events = [event async for event in rag.run("q", [])]
+    citations = next(e.citations for e in events if isinstance(e, CitationsEvent))
+
+    assert [c.doc_title for c in citations] == ["a.pdf"]
+    assert citations[0].reference_index == 1
+
+
 async def test_citations_deduped_and_in_first_appearance_order() -> None:
     chunks = [
         _chunk("a.pdf", "内容一"),

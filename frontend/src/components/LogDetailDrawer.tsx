@@ -351,7 +351,11 @@ export default function LogDetailDrawer({ logId, onClose }: LogDetailDrawerProps
                   </h4>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     {log.citations.map((citation, index) => (
-                      <CitationCard key={citation.chunk_id} index={index + 1} citation={citation} />
+                      <CitationCard
+                        key={citation.chunk_id}
+                        index={citation.reference_index ?? index + 1}
+                        citation={citation}
+                      />
                     ))}
                   </div>
                 </section>

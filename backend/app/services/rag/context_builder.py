@@ -38,6 +38,7 @@ class ContextBuilder:
                     doc_title=doc_title,
                     heading_path=chunk.heading_path,
                     snippet=chunk.content[:200],
+                    reference_index=index,
                 )
             )
             refs.append(

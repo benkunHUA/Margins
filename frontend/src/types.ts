@@ -38,6 +38,7 @@ export interface Citation {
   doc_title: string;
   heading_path: string | null;
   snippet: string;
+  reference_index?: number | null;
 }
 
 export interface MessageItem {

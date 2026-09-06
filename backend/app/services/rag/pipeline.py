@@ -24,7 +24,7 @@ from app.vector.base import ScoredChunk
 
 logger = get_logger(__name__)
 
-CITATION_MARKER = re.compile(r"\[(\d{1,2})\]")
+CITATION_MARKER = re.compile(r"[\[【]\s*(?:引用|参考|文献)?\s*(\d{1,2})\s*[\]】]")
 
 
 class RAGPipeline:
