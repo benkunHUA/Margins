@@ -9,11 +9,13 @@ from app.repositories.memory.memory_repos import (
     InMemoryChunkRepository,
     InMemoryDocumentRepository,
     InMemoryParseJobRepository,
+    InMemoryQueryLogRepository,
     InMemorySessionRepository,
 )
 from app.repositories.sql.chunks import ChunkSqlRepository
 from app.repositories.sql.database import create_engine_and_sessionmaker, run_migrations
 from app.repositories.sql.documents import DocumentSqlRepository
+from app.repositories.sql.query_logs import QueryLogSqlRepository
 from app.repositories.sql.sessions import ParseJobSqlRepository, SessionSqlRepository
 from app.services.chat_service import ChatService
 from app.services.chunking import Chunker, MarkdownChunker
@@ -67,11 +69,13 @@ class ServiceContainer:
             self.chunks = ChunkSqlRepository(session_factory)
             self.jobs = ParseJobSqlRepository(session_factory)
             self.sessions = SessionSqlRepository(session_factory)
+            self.query_logs = QueryLogSqlRepository(session_factory)
         else:
             self.documents = InMemoryDocumentRepository()
             self.chunks = InMemoryChunkRepository()
             self.jobs = InMemoryParseJobRepository()
             self.sessions = InMemorySessionRepository()
+            self.query_logs = InMemoryQueryLogRepository()
 
         self.parse_queue: asyncio.Queue[UUID] = asyncio.Queue()
         self.parser = parser or MineruOnlineParser(settings.parser)
@@ -131,6 +135,7 @@ class ServiceContainer:
             self.sessions,
             self.rag,
             history_limit=settings.retrieval.history_limit,
+            logs=self.query_logs,
         )
 
     async def startup(self) -> None:
