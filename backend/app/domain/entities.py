@@ -25,6 +25,32 @@ class Citation(BaseModel):
     snippet: str
 
 
+class QueryLogStep(BaseModel):
+    """链路中的单个阶段（stage 为 rewrite/hybrid/rerank/context/llm）。"""
+
+    stage: str
+    label: str
+    duration_ms: float = 0
+    summary: str = ""
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
+class QueryLog(BaseModel):
+    """一次问答的完整检索链路记录。"""
+
+    id: UUID = Field(default_factory=uuid4)
+    session_id: UUID
+    session_title: str = ""
+    question: str
+    status: str = "success"
+    error: str | None = None
+    total_ms: float = 0.0
+    answer: str | None = None
+    steps: list[QueryLogStep] = Field(default_factory=list)
+    citations: list[Citation] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=_now)
+
+
 class Document(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 

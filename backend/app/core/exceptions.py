@@ -67,6 +67,11 @@ class NotImplementedStageError(AppError):
     status_code = 501
 
 
+class QueryLogNotFoundError(AppError):
+    code = "QUERY_LOG_NOT_FOUND"
+    status_code = 404
+
+
 class ImageSummaryError(AppError):
     code = "IMAGE_SUMMARY_ERROR"
     status_code = 502
