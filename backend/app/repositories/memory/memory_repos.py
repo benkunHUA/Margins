@@ -12,6 +12,7 @@ from app.domain.entities import (
     Message,
     Page,
     ParseJob,
+    QueryLog,
     Session,
 )
 from app.domain.enums import DocumentStatus
@@ -19,6 +20,7 @@ from app.repositories.base import (
     ChunkRepository,
     DocumentRepository,
     ParseJobRepository,
+    QueryLogRepository,
     SessionRepository,
 )
 
@@ -158,3 +160,47 @@ class InMemoryParseJobRepository(ParseJobRepository):
             if job is not None and job.document_id == doc_id:
                 return job
         return None
+
+
+class InMemoryQueryLogRepository(QueryLogRepository):
+    def __init__(self) -> None:
+        self._items: dict[UUID, QueryLog] = {}
+
+    async def create(self, log: QueryLog) -> QueryLog:
+        self._items[log.id] = log
+        return log
+
+    async def get(self, log_id: UUID) -> QueryLog | None:
+        return self._items.get(log_id)
+
+    async def list(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        q: str | None = None,
+        session_id: UUID | None = None,
+        status: str | None = None,
+    ) -> Page[QueryLog]:
+        items = list(self._items.values())
+        if q:
+            lowered = q.lower()
+            items = [
+                log
+                for log in items
+                if lowered in log.question.lower()
+                or (log.answer or "").lower().find(lowered) >= 0
+            ]
+        if session_id is not None:
+            items = [log for log in items if log.session_id == session_id]
+        if status is not None:
+            items = [log for log in items if log.status == status]
+        items.sort(key=lambda log: log.created_at, reverse=True)
+        total = len(items)
+        start = (page - 1) * page_size
+        return Page(
+            items=items[start : start + page_size],
+            total=total,
+            page=page,
+            page_size=page_size,
+        )

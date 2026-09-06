@@ -15,6 +15,7 @@ from app.domain.entities import (
     Message,
     Page,
     ParseJob,
+    QueryLog,
     Session,
 )
 from app.domain.enums import DocumentStatus
@@ -99,3 +100,22 @@ class ParseJobRepository(ABC):
 
     @abstractmethod
     async def get_by_document(self, doc_id: UUID) -> ParseJob | None: ...
+
+
+class QueryLogRepository(ABC):
+    @abstractmethod
+    async def create(self, log: QueryLog) -> QueryLog: ...
+
+    @abstractmethod
+    async def get(self, log_id: UUID) -> QueryLog | None: ...
+
+    @abstractmethod
+    async def list(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        q: str | None = None,
+        session_id: UUID | None = None,
+        status: str | None = None,
+    ) -> Page[QueryLog]: ...
