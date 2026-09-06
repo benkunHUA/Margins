@@ -18,6 +18,7 @@ from app.services.llm import ChatMessage, LLMClient
 from app.services.rag.context_builder import ContextBuilder
 from app.services.rag.hybrid_retriever import HybridRetriever
 from app.services.rag.query_rewriter import QueryRewriter
+from app.services.rag.trace import Trace
 from app.services.reranking import Reranker
 from app.vector.base import ScoredChunk
 
@@ -47,28 +48,46 @@ class RAGPipeline:
         self,
         question: str,
         history: Sequence[Message],
+        *,
+        trace: Trace | None = None,
     ) -> AsyncIterator[RagEvent]:
         start = time.perf_counter()
         try:
             t0 = time.perf_counter()
-            queries = await self._rewriter.rewrite(question, history)
+            if trace is not None:
+                queries = await self._rewriter.rewrite(question, history, trace=trace)
+            else:
+                queries = await self._rewriter.rewrite(question, history)
             rewrite_ms = round((time.perf_counter() - t0) * 1000, 1)
             t0 = time.perf_counter()
             merged: dict[str, ScoredChunk] = {}
             for query in queries:
-                for item in await self._hybrid.retrieve(query):
+                if trace is not None:
+                    items = await self._hybrid.retrieve(query, trace=trace)
+                else:
+                    items = await self._hybrid.retrieve(query)
+                for item in items:
                     key = str(item.chunk.id)
                     if key not in merged or item.score > merged[key].score:
                         merged[key] = item
             candidates = list(merged.values())
             retrieve_ms = round((time.perf_counter() - t0) * 1000, 1)
             t0 = time.perf_counter()
-            reranked = await self._reranker.rerank(
-                question,
-                candidates,
-                top_n=self._config.rerank_top_n,
-                threshold=self._config.relevance_threshold,
-            )
+            if trace is not None:
+                reranked = await self._reranker.rerank(
+                    question,
+                    candidates,
+                    top_n=self._config.rerank_top_n,
+                    threshold=self._config.relevance_threshold,
+                    trace=trace,
+                )
+            else:
+                reranked = await self._reranker.rerank(
+                    question,
+                    candidates,
+                    top_n=self._config.rerank_top_n,
+                    threshold=self._config.relevance_threshold,
+                )
             rerank_ms = round((time.perf_counter() - t0) * 1000, 1)
             capped = self._cap_per_document(reranked, self._config.max_chunks_per_document)
             capped = [
@@ -83,6 +102,32 @@ class RAGPipeline:
                 question,
             )
             messages = [ChatMessage(**item) for item in bundle.messages]
+            if trace is not None:
+                trace.record(
+                    stage="context",
+                    label="上下文与 Prompt",
+                    duration_ms=0,
+                    summary=f"引用 {len(bundle.citations)} 条",
+                    data={
+                        "top_k": len(top),
+                        "reference_count": len(bundle.citations),
+                        "history_limit": self._config.history_limit,
+                        "references": [
+                            {
+                                "index": index,
+                                "doc_title": citation.doc_title,
+                                "heading_path": citation.heading_path,
+                                "snippet": citation.snippet,
+                            }
+                            for index, citation in enumerate(bundle.citations, start=1)
+                        ],
+                        "prompt": {
+                            "messages": [
+                                {"role": m.role, "content": m.content} for m in messages
+                            ]
+                        },
+                    },
+                )
             logger.info(
                 "Prompt 内容",
                 extra={
@@ -97,11 +142,26 @@ class RAGPipeline:
             )
             parts: list[str] = []
             t0 = time.perf_counter()
+            stream_chunks = 0
             async for delta in self._llm_client.stream(messages):
                 parts.append(delta)
+                stream_chunks += 1
                 yield DeltaEvent(content=delta)
             llm_ms = round((time.perf_counter() - t0) * 1000, 1)
             answer = "".join(parts)
+            if trace is not None:
+                trace.record(
+                    stage="llm",
+                    label="LLM 生成",
+                    duration_ms=llm_ms,
+                    summary=f"{stream_chunks} 个流式块 · {len(answer)} 字",
+                    data={
+                        "stream_chunks": stream_chunks,
+                        "duration_ms": llm_ms,
+                        "answer_excerpt": answer[:200],
+                        "output_tokens_estimate": len(answer) // 2,
+                    },
+                )
             citations = self._filter_citations(
                 bundle.citations,
                 answer,

@@ -31,7 +31,13 @@ SYSTEM_PROMPT = (
 
 class QueryRewriter(ABC):
     @abstractmethod
-    async def rewrite(self, question: str, history: Sequence[Message]) -> list[str]: ...
+    async def rewrite(
+        self,
+        question: str,
+        history: Sequence[Message],
+        *,
+        trace=None,
+    ) -> list[str]: ...
 
 
 class LLMQueryRewriter(QueryRewriter):
@@ -39,7 +45,13 @@ class LLMQueryRewriter(QueryRewriter):
         self._llm = llm
         self._config = config
 
-    async def rewrite(self, question: str, history: Sequence[Message]) -> list[str]:
+    async def rewrite(
+        self,
+        question: str,
+        history: Sequence[Message],
+        *,
+        trace=None,
+    ) -> list[str]:
         start = time.perf_counter()
         if not self._config.enabled:
             logger.info(
@@ -55,6 +67,23 @@ class LLMQueryRewriter(QueryRewriter):
                     }
                 },
             )
+            if trace is not None:
+                trace.record(
+                    stage="rewrite",
+                    label="查询改写",
+                    duration_ms=round((time.perf_counter() - start) * 1000, 1),
+                    summary="改写已关闭",
+                    data={
+                        "enabled": False,
+                        "need_rewrite": False,
+                        "rewrite_type": None,
+                        "queries": [question],
+                        "history": [
+                            {"role": m.role.value, "content": m.content}
+                            for m in history[-self._config.history_limit :]
+                        ],
+                    },
+                )
             return [question]
 
         decision: dict = {}
@@ -90,6 +119,27 @@ class LLMQueryRewriter(QueryRewriter):
                 }
             },
         )
+        if trace is not None:
+            trace.record(
+                stage="rewrite",
+                label="查询改写",
+                duration_ms=round((time.perf_counter() - start) * 1000, 1),
+                summary=(
+                    f"需改写 → {decision.get('rewrite_type')}"
+                    if need_rewrite
+                    else "无需改写"
+                ),
+                data={
+                    "enabled": self._config.enabled,
+                    "need_rewrite": need_rewrite,
+                    "rewrite_type": decision.get("rewrite_type") if need_rewrite else None,
+                    "queries": result,
+                    "history": [
+                        {"role": m.role.value, "content": m.content}
+                        for m in history[-self._config.history_limit :]
+                    ],
+                },
+            )
         return result
 
 
