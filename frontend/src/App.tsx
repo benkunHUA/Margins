@@ -1,8 +1,9 @@
 import { NavLink, Route, Routes } from "react-router-dom";
-import { BookOpen, MessagesSquare } from "lucide-react";
+import { BookOpen, MessagesSquare, ScrollText } from "lucide-react";
 
 import ChatPage from "@/pages/ChatPage";
 import DocumentsPage from "@/pages/DocumentsPage";
+import LogsPage from "@/pages/LogsPage";
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   `flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
@@ -23,12 +24,17 @@ export default function App() {
             <MessagesSquare className="size-4" />
             知识问答
           </NavLink>
+          <NavLink to="/logs" className={navLinkClass}>
+            <ScrollText className="size-4" />
+            链路日志
+          </NavLink>
         </nav>
       </aside>
       <main className="min-w-0 flex-1">
         <Routes>
           <Route path="/" element={<DocumentsPage />} />
           <Route path="/chat" element={<ChatPage />} />
+          <Route path="/logs" element={<LogsPage />} />
         </Routes>
       </main>
     </div>
