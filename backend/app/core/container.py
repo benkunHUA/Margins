@@ -25,6 +25,7 @@ from app.services.image_summarizer import DashScopeImageSummarizer, ImageSummari
 from app.services.indexing import IndexingPipeline
 from app.services.llm import LangChainLLMClient, LLMClient
 from app.services.parsing import MineruOnlineParser, MineruParser
+from app.services.query_log_service import QueryLogService
 from app.services.rag.context_builder import ContextBuilder
 from app.services.rag.hybrid_retriever import HybridRetriever
 from app.services.rag.pipeline import RAGPipeline
@@ -137,6 +138,7 @@ class ServiceContainer:
             history_limit=settings.retrieval.history_limit,
             logs=self.query_logs,
         )
+        self.log_service = QueryLogService(self.query_logs)
 
     async def startup(self) -> None:
         storage = self.settings.storage

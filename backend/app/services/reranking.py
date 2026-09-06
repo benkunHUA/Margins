@@ -23,7 +23,6 @@ class Reranker(ABC):
         *,
         top_n: int,
         threshold: float,
-        trace=None,
     ) -> list[ScoredChunk]: ...
 
 
@@ -39,7 +38,6 @@ class DashScopeReranker(Reranker):
         *,
         top_n: int,
         threshold: float,
-        trace=None,
     ) -> list[ScoredChunk]:
         if not candidates:
             return []
@@ -87,28 +85,6 @@ class DashScopeReranker(Reranker):
                 }
             },
         )
-        if trace is not None:
-            trace.record(
-                stage="rerank",
-                label="重排序",
-                duration_ms=round((time.perf_counter() - start) * 1000, 1),
-                summary=f"{len(candidates)} 候选 → {len(result)} 条",
-                data={
-                    "candidates": len(candidates),
-                    "top_n": top_n,
-                    "threshold": threshold,
-                    "returned": len(result),
-                    "results": [
-                        {
-                            "chunk_id": str(item.chunk.id),
-                            "doc_title": item.chunk.metadata.get("doc_title"),
-                            "score": round(item.score, 4),
-                            "snippet": item.chunk.content[:120],
-                        }
-                        for item in result[:10]
-                    ],
-                },
-            )
         return result
 
 

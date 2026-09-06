@@ -73,22 +73,35 @@ class RAGPipeline:
             candidates = list(merged.values())
             retrieve_ms = round((time.perf_counter() - t0) * 1000, 1)
             t0 = time.perf_counter()
-            if trace is not None:
-                reranked = await self._reranker.rerank(
-                    question,
-                    candidates,
-                    top_n=self._config.rerank_top_n,
-                    threshold=self._config.relevance_threshold,
-                    trace=trace,
-                )
-            else:
-                reranked = await self._reranker.rerank(
-                    question,
-                    candidates,
-                    top_n=self._config.rerank_top_n,
-                    threshold=self._config.relevance_threshold,
-                )
+            reranked = await self._reranker.rerank(
+                question,
+                candidates,
+                top_n=self._config.rerank_top_n,
+                threshold=self._config.relevance_threshold,
+            )
             rerank_ms = round((time.perf_counter() - t0) * 1000, 1)
+            if trace is not None:
+                trace.record(
+                    stage="rerank",
+                    label="重排序",
+                    duration_ms=rerank_ms,
+                    summary=f"{len(candidates)} 候选 → {len(reranked)} 条",
+                    data={
+                        "candidates": len(candidates),
+                        "top_n": self._config.rerank_top_n,
+                        "threshold": self._config.relevance_threshold,
+                        "returned": len(reranked),
+                        "results": [
+                            {
+                                "chunk_id": str(item.chunk.id),
+                                "doc_title": item.chunk.metadata.get("doc_title"),
+                                "score": round(item.score, 4),
+                                "snippet": item.chunk.content[:120],
+                            }
+                            for item in reranked[:10]
+                        ],
+                    },
+                )
             capped = self._cap_per_document(reranked, self._config.max_chunks_per_document)
             capped = [
                 item

@@ -5,6 +5,7 @@ from fastapi import Depends, Request
 from app.core.container import ServiceContainer
 from app.services.chat_service import ChatService
 from app.services.document_service import DocumentService
+from app.services.query_log_service import QueryLogService
 
 
 def get_container(request: Request) -> ServiceContainer:
@@ -17,3 +18,9 @@ def get_document_service(container: ServiceContainer = Depends(get_container)) -
 
 def get_chat_service(container: ServiceContainer = Depends(get_container)) -> ChatService:
     return container.chat_service
+
+
+def get_query_log_service(
+    container: ServiceContainer = Depends(get_container),
+) -> QueryLogService:
+    return container.log_service

@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.errors import register_exception_handlers
-from app.api.routers import documents, health, sessions
+from app.api.routers import documents, health, logs, sessions
 from app.core.config import Settings
 from app.core.container import ServiceContainer
 from app.core.logging import setup_logging
@@ -36,6 +36,7 @@ def create_app(
     app.include_router(health.router)
     app.include_router(documents.router)
     app.include_router(sessions.router)
+    app.include_router(logs.router)
     register_exception_handlers(app)
     return app
 
