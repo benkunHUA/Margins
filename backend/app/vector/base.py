@@ -21,6 +21,10 @@ class ScoredChunk(BaseModel):
 class VectorRepository(ABC):
     """稠密向量索引（Faiss 实现见 faiss_repo.py，M1 落地）。"""
 
+    def loaded_ids(self) -> set[str]:
+        """当前内存索引已包含的 chunk id（未加载时为空）。"""
+        return set()
+
     @abstractmethod
     async def add(self, items: Sequence[IndexableChunk]) -> None: ...
 

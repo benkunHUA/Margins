@@ -36,6 +36,9 @@ class FaissVectorRepository(VectorRepository):
         self._index_file = config.faiss_index_dir / "index.faiss"
         self._map_file = config.faiss_index_dir / "id_map.json"
 
+    def loaded_ids(self) -> set[str]:
+        return set(self._chunks)
+
     @staticmethod
     def _normalize(vector: Sequence[float]) -> np.ndarray:
         arr = np.asarray(vector, dtype="float32")

@@ -152,7 +152,18 @@ class ServiceContainer:
             await asyncio.to_thread(run_migrations, storage.data_dir)
         await self.vector.load()
         remaining = await self.chunks.list_all()
-        await self.vector.rebuild(remaining)
+        missing = [
+            chunk for chunk in remaining if str(chunk.id) not in self.vector.loaded_ids()
+        ]
+        if missing:
+            try:
+                await self.vector.rebuild(remaining)
+            except Exception:
+                logger.warning(
+                    "向量索引重建失败，启动继续（检索可能缺失部分文档）", exc_info=True
+                )
+        else:
+            logger.info("向量索引已完整，跳过重建（chunks=%d）", len(remaining))
         await self.sparse.rebuild(remaining)
         if self.start_worker:
             self._worker_task = asyncio.create_task(self.worker.run())
