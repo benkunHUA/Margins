@@ -78,8 +78,13 @@ class InMemoryDocumentRepository(DocumentRepository):
 class InMemoryChunkRepository(ChunkRepository):
     def __init__(self) -> None:
         self._items: dict[UUID, Chunk] = {}
+        self._next = 0
 
     async def add_many(self, chunks: Sequence[Chunk]) -> None:
+        for chunk in chunks:
+            if chunk.faiss_id is None:
+                chunk.faiss_id = self._next
+                self._next += 1
         self._items.update({c.id: c for c in chunks})
 
     async def list_by_document(self, doc_id: UUID) -> list[Chunk]:
@@ -94,6 +99,17 @@ class InMemoryChunkRepository(ChunkRepository):
 
     async def get_many(self, chunk_ids: Sequence[UUID]) -> list[Chunk]:
         return [self._items[cid] for cid in chunk_ids if cid in self._items]
+
+    async def get_by_faiss_ids(self, faiss_ids: Sequence[int]) -> list[Chunk]:
+        wanted = set(faiss_ids)
+        return [c for c in self._items.values() if c.faiss_id in wanted]
+
+    async def allocate_missing_ids(self) -> int:
+        missing = [c for c in self._items.values() if c.faiss_id is None]
+        for chunk in missing:
+            chunk.faiss_id = self._next
+            self._next += 1
+        return len(missing)
 
 
 class InMemorySessionRepository(SessionRepository):
