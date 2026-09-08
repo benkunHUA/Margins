@@ -10,7 +10,7 @@ from uuid import UUID
 from app.core.config import ImageSummaryConfig, QueueConfig, StorageConfig
 from app.core.logging import get_logger
 from app.domain.entities import Document
-from app.domain.enums import DocumentStatus, ParseJobStatus
+from app.domain.enums import DocumentStatus, ParseJobStatus, ParseMode
 from app.repositories.base import DocumentRepository, ParseJobRepository
 from app.services.image_enrichment import (
     contains_image_placeholder,
@@ -35,6 +35,7 @@ class ParseWorker:
         storage: StorageConfig,
         image_summarizer: ImageSummarizer | None = None,
         image_config: ImageSummaryConfig | None = None,
+        plain_parser: DocumentParser | None = None,
     ) -> None:
         self._queue = queue
         self._parser = parser
@@ -45,6 +46,7 @@ class ParseWorker:
         self._storage = storage
         self._image_summarizer = image_summarizer
         self._image_config = image_config
+        self._plain_parser = plain_parser
 
     async def run(self) -> None:
         semaphore = asyncio.Semaphore(self._config.concurrency)
@@ -88,7 +90,8 @@ class ParseWorker:
                 if images_dir is not None:
                     await asyncio.to_thread(_clear_dir, images_dir)
 
-                parsed = await self._parser.parse(
+                parser = self._select_parser(doc)
+                parsed = await parser.parse(
                     doc.file_path,
                     file_type=doc.file_type,
                     images_dir=images_dir,
@@ -97,6 +100,7 @@ class ParseWorker:
 
                 if (
                     self._should_summarize()
+                    and parser is self._parser
                     and not parsed.images
                     and contains_image_placeholder(markdown)
                 ):
@@ -207,6 +211,14 @@ class ParseWorker:
             enriched.appended,
         )
         return enriched.markdown
+
+    def _select_parser(self, doc: Document) -> DocumentParser:
+        if self._plain_parser is not None and (
+            doc.file_type in ("txt", "md")
+            or (doc.file_type == "pdf" and doc.parse_mode == ParseMode.PLAIN_TEXT)
+        ):
+            return self._plain_parser
+        return self._parser
 
 
 def _clear_dir(directory: Path) -> None:

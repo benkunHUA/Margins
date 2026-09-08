@@ -24,7 +24,7 @@ from app.services.embedding import DashScopeEmbeddingService, EmbeddingService
 from app.services.image_summarizer import DashScopeImageSummarizer, ImageSummarizer
 from app.services.indexing import IndexingPipeline
 from app.services.llm import LangChainLLMClient, LLMClient
-from app.services.parsing import DocumentParser, MineruOnlineParser
+from app.services.parsing import DocumentParser, MineruOnlineParser, PlainTextParser
 from app.services.query_log_service import QueryLogService
 from app.services.rag.context_builder import ContextBuilder
 from app.services.rag.hybrid_retriever import HybridRetriever
@@ -80,6 +80,7 @@ class ServiceContainer:
 
         self.parse_queue: asyncio.Queue[UUID] = asyncio.Queue()
         self.parser = parser or MineruOnlineParser(settings.parser)
+        self.plain_parser = PlainTextParser()
         self.embedding = embeddings or DashScopeEmbeddingService(settings.models)
         self.chunker = chunker or MarkdownChunker()
         self.vector = vector or FaissVectorRepository(
@@ -122,6 +123,7 @@ class ServiceContainer:
             settings.storage,
             image_summarizer=self.image_summarizer,
             image_config=settings.image_summary,
+            plain_parser=self.plain_parser,
         )
         self.document_service = DocumentService(
             self.documents,

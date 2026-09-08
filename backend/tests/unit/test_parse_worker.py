@@ -5,7 +5,7 @@ from pathlib import Path
 
 from app.core.config import ImageSummaryConfig, QueueConfig, StorageConfig
 from app.domain.entities import Document, ParseJob
-from app.domain.enums import DocumentStatus, ParseJobStatus
+from app.domain.enums import DocumentStatus, ParseJobStatus, ParseMode
 from app.repositories.memory.memory_repos import (
     InMemoryDocumentRepository,
     InMemoryParseJobRepository,
@@ -155,6 +155,87 @@ class FakeImageSummarizer(ImageSummarizer):
         if self.error is not None:
             raise self.error
         return [self.text] * len(images)
+
+
+class SpyParser(DocumentParser):
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.calls = 0
+
+    async def parse(
+        self,
+        file_path: Path,
+        *,
+        file_type: str,
+        images_dir: Path | None = None,
+        force_extract: bool = False,
+    ) -> ParsedDocument:
+        self.calls += 1
+        return ParsedDocument(markdown=f"#{self.name}")
+
+
+async def _make_route_worker(tmp_path, mineru: SpyParser, plain: SpyParser):
+    documents = InMemoryDocumentRepository()
+    jobs = InMemoryParseJobRepository()
+    queue: asyncio.Queue = asyncio.Queue()
+    worker = ParseWorker(
+        queue=queue,
+        parser=mineru,
+        plain_parser=plain,
+        indexing=FakeIndexing(),
+        documents=documents,
+        jobs=jobs,
+        config=_config(1),
+        storage=StorageConfig(data_dir=tmp_path),
+    )
+    return worker, documents, jobs
+
+
+async def _seed(documents, jobs, *, file_type: str, parse_mode: ParseMode):
+    doc = await documents.create(
+        Document(
+            filename=f"a.{file_type}",
+            file_type=file_type,
+            file_size=1,
+            file_path=Path(f"a.{file_type}"),
+            parse_mode=parse_mode,
+        )
+    )
+    await jobs.create(ParseJob(document_id=doc.id))
+    return doc
+
+
+async def test_worker_routes_txt_to_plain_parser(tmp_path) -> None:
+    mineru = SpyParser("mineru")
+    plain = SpyParser("plain")
+    worker, documents, jobs = await _make_route_worker(tmp_path, mineru, plain)
+    doc = await _seed(documents, jobs, file_type="txt", parse_mode=ParseMode.MINERU)
+
+    await worker._process_one(doc.id)
+
+    assert plain.calls == 1 and mineru.calls == 0
+
+
+async def test_worker_routes_pdf_plain_mode_to_plain_parser(tmp_path) -> None:
+    mineru = SpyParser("mineru")
+    plain = SpyParser("plain")
+    worker, documents, jobs = await _make_route_worker(tmp_path, mineru, plain)
+    doc = await _seed(documents, jobs, file_type="pdf", parse_mode=ParseMode.PLAIN_TEXT)
+
+    await worker._process_one(doc.id)
+
+    assert plain.calls == 1 and mineru.calls == 0
+
+
+async def test_worker_routes_pdf_mineru_to_mineru_parser(tmp_path) -> None:
+    mineru = SpyParser("mineru")
+    plain = SpyParser("plain")
+    worker, documents, jobs = await _make_route_worker(tmp_path, mineru, plain)
+    doc = await _seed(documents, jobs, file_type="pdf", parse_mode=ParseMode.MINERU)
+
+    await worker._process_one(doc.id)
+
+    assert mineru.calls == 1 and plain.calls == 0
 
 
 def _image_summary_config(**kwargs) -> ImageSummaryConfig:
