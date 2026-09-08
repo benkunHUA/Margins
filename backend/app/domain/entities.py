@@ -70,7 +70,7 @@ class Document(BaseModel):
 
 
 class Chunk(BaseModel):
-    """检索最小单元；id 同时作为 Faiss 向量 id。"""
+    """检索最小单元；id 为业务主键，faiss_id 为向量索引 id。"""
 
     id: UUID = Field(default_factory=uuid4)
     document_id: UUID

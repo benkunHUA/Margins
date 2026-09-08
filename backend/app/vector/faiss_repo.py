@@ -1,13 +1,13 @@
-"""Faiss 向量仓库：原生 faiss IndexFlatIP + id_map.json 落盘。
+"""Faiss 向量仓库：IndexIDMap(IndexFlatIP)，faiss_id 直接写入二进制。
 
-与详细设计一致：chunk UUID 作向量 id、本地落盘、rebuild 收敛删除。
-实现上直接用 faiss 原生 API，避免 langchain FAISS 的 Embeddings 适配层。
+chunks.faiss_id 由 ChunkRepository 分配并持久化到 SQLite；检索后按 faiss_id
+回查 chunk 原文。写盘采用临时文件 + os.replace 原子替换；不再读写 id_map.json。
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
+import os
 from collections.abc import Sequence
 
 import faiss
@@ -15,6 +15,7 @@ import numpy as np
 
 from app.core.config import StorageConfig
 from app.domain.entities import Chunk
+from app.repositories.base import ChunkRepository
 from app.services.embedding import EmbeddingService
 from app.vector.base import IndexableChunk, ScoredChunk, VectorRepository
 
@@ -25,19 +26,21 @@ class FaissVectorRepository(VectorRepository):
         config: StorageConfig,
         embeddings: EmbeddingService,
         dimension: int,
+        chunks: ChunkRepository | None = None,
     ) -> None:
         self._config = config
         self._embeddings = embeddings
         self._dim = dimension
-        self._index: faiss.IndexFlatIP | None = None
-        self._id_map: dict[int, str] = {}
-        self._chunks: dict[str, Chunk] = {}
+        self._chunks_repo = chunks
+        self._index: faiss.IndexIDMap | None = None
+        self._ids: set[int] = set()
         self._lock = asyncio.Lock()
         self._index_file = config.faiss_index_dir / "index.faiss"
         self._map_file = config.faiss_index_dir / "id_map.json"
+        self.needs_rebuild = False
 
-    def loaded_ids(self) -> set[str]:
-        return set(self._chunks)
+    def loaded_ids(self) -> set[int]:
+        return set(self._ids)
 
     @staticmethod
     def _normalize(vector: Sequence[float]) -> np.ndarray:
@@ -45,87 +48,118 @@ class FaissVectorRepository(VectorRepository):
         norm = np.linalg.norm(arr)
         return arr if norm == 0 else arr / norm
 
-    def _save_sync(self) -> None:
+    def _save_atomic_sync(self) -> None:
         if self._index is None:
             return
         self._config.faiss_index_dir.mkdir(parents=True, exist_ok=True)
-        faiss.write_index(self._index, str(self._index_file))
-        payload = {
-            str(idx): {
-                "chunk_id": chunk_id,
-                "chunk": self._chunks[chunk_id].model_dump(mode="json"),
-            }
-            for idx, chunk_id in self._id_map.items()
-        }
-        self._map_file.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        tmp = self._index_file.with_suffix(".faiss.tmp")
+        faiss.write_index(self._index, str(tmp))
+        os.replace(tmp, self._index_file)
+        self._map_file.unlink(missing_ok=True)  # 清理历史 JSON
 
-    def _search_sync(self, embedding: Sequence[float], k: int) -> list[ScoredChunk]:
+    def _search_sync(self, embedding: Sequence[float], k: int) -> list[tuple[int, float]]:
         if self._index is None or self._index.ntotal == 0:
             return []
         query = self._normalize(embedding).reshape(1, -1)
         scores, idxs = self._index.search(query, k)
-        results: list[ScoredChunk] = []
-        for score, idx in zip(scores[0], idxs[0], strict=True):
-            if idx < 0:
-                continue
-            chunk_id = self._id_map.get(int(idx))
-            chunk = self._chunks.get(chunk_id or "")
-            if chunk is not None:
-                results.append(ScoredChunk(chunk=chunk, score=float(score)))
-        return results
+        return [
+            (int(fid), float(score))
+            for score, fid in zip(scores[0], idxs[0], strict=True)
+            if fid >= 0
+        ]
 
     async def add(self, items: Sequence[IndexableChunk]) -> None:
         async with self._lock:
+            for item in items:
+                if item.chunk.faiss_id is None:
+                    raise ValueError("IndexableChunk 缺少 faiss_id，先经 ChunkRepository 分配")
+
             def _do() -> None:
                 if self._index is None:
-                    self._index = faiss.IndexFlatIP(self._dim)
+                    self._index = faiss.IndexIDMap(faiss.IndexFlatIP(self._dim))
                 vectors = np.vstack([self._normalize(item.embedding) for item in items])
-                start = self._index.ntotal
-                self._index.add(vectors)
-                for offset, item in enumerate(items):
-                    chunk_id = str(item.chunk.id)
-                    self._id_map[start + offset] = chunk_id
-                    self._chunks[chunk_id] = item.chunk
-                self._save_sync()
+                ids = np.asarray(
+                    [int(item.chunk.faiss_id) for item in items], dtype="int64"
+                )
+                self._index.add_with_ids(vectors, ids)
+                self._ids.update(int(fid) for fid in ids)
+                self._save_atomic_sync()
 
             await asyncio.to_thread(_do)
 
     async def search(self, embedding: Sequence[float], k: int) -> list[ScoredChunk]:
-        return await asyncio.to_thread(self._search_sync, embedding, k)
+        async with self._lock:
+            hits = await asyncio.to_thread(self._search_sync, embedding, k)
+            if not hits:
+                return []
+            faiss_ids = [fid for fid, _ in hits]
+            rows = await self._chunks_repo.get_by_faiss_ids(faiss_ids)
+            by_id = {row.faiss_id: row for row in rows}
+            return [
+                ScoredChunk(chunk=by_id[fid], score=score)
+                for fid, score in hits
+                if fid in by_id
+            ]
+
+    async def remove(self, faiss_ids: Sequence[int]) -> None:
+        ids = [int(fid) for fid in faiss_ids if fid is not None]
+        if not ids:
+            return
+        async with self._lock:
+            def _do() -> None:
+                if self._index is None:
+                    return
+                self._index.remove_ids(np.asarray(ids, dtype="int64"))
+                self._ids.difference_update(ids)
+                self._save_atomic_sync()
+
+            await asyncio.to_thread(_do)
 
     async def rebuild(self, chunks: Sequence[Chunk]) -> None:
         async with self._lock:
-            embeddings = await self._embeddings.embed_texts([c.content for c in chunks])
+            embeddings = await self._embeddings.embed_texts(
+                [c.content for c in chunks]
+            )
 
             def _do() -> None:
-                index = faiss.IndexFlatIP(self._dim)
-                id_map: dict[int, str] = {}
-                chunks_map: dict[str, Chunk] = {}
-                for i, (chunk, embedding) in enumerate(zip(chunks, embeddings, strict=True)):
-                    index.add(self._normalize(embedding).reshape(1, -1))
-                    id_map[i] = str(chunk.id)
-                    chunks_map[str(chunk.id)] = chunk
+                index = faiss.IndexIDMap(faiss.IndexFlatIP(self._dim))
+                ids: list[int] = []
+                for chunk in chunks:
+                    if chunk.faiss_id is None:
+                        raise ValueError("rebuild 前需为 chunk 分配 faiss_id")
+                    ids.append(int(chunk.faiss_id))
+                if chunks:
+                    vectors = np.vstack(
+                        [self._normalize(embedding) for embedding in embeddings]
+                    )
+                    index.add_with_ids(vectors, np.asarray(ids, dtype="int64"))
                 self._index = index
-                self._id_map = id_map
-                self._chunks = chunks_map
-                self._save_sync()
+                self._ids = set(ids)
+                self.needs_rebuild = False
+                self._save_atomic_sync()
 
             await asyncio.to_thread(_do)
 
     async def save(self) -> None:
-        await asyncio.to_thread(self._save_sync)
+        await asyncio.to_thread(self._save_atomic_sync)
 
     async def load(self) -> None:
         async with self._lock:
             def _do() -> None:
+                self._index = None
+                self._ids = set()
+                self.needs_rebuild = False
                 if not self._index_file.exists():
+                    self.needs_rebuild = True
                     return
-                self._index = faiss.read_index(str(self._index_file))
-                payload = json.loads(self._map_file.read_text(encoding="utf-8"))
-                self._id_map = {int(idx): item["chunk_id"] for idx, item in payload.items()}
-                self._chunks = {
-                    item["chunk_id"]: Chunk.model_validate(item["chunk"])
-                    for item in payload.values()
-                }
+                index = faiss.read_index(str(self._index_file))
+                if not isinstance(index, faiss.IndexIDMap):
+                    self.needs_rebuild = True  # 旧 IndexFlat 格式
+                    return
+                self._index = index
+                self._ids = set(
+                    int(fid)
+                    for fid in faiss.vector_to_array(index.id_map).tolist()
+                )
 
             await asyncio.to_thread(_do)
