@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronRight, Copy, FileText, ListTree, RefreshCw, X } from "lucide-react";
 
 import MarkdownViewer from "@/components/MarkdownViewer";
@@ -8,7 +8,7 @@ import {
   useReparseDocument,
 } from "@/hooks/useDocuments";
 import { cn } from "@/lib/utils";
-import type { DocumentStatus } from "@/types";
+import type { DocumentStatus, ParseMode } from "@/types";
 
 const statusLabel: Record<DocumentStatus, string> = {
   pending: "待解析",
@@ -22,6 +22,16 @@ const statusClass: Record<DocumentStatus, string> = {
   parsing: "bg-sky-100 text-sky-700",
   ready: "bg-emerald-100 text-emerald-700",
   failed: "bg-red-100 text-red-700",
+};
+
+const parseModeLabel: Record<ParseMode, string> = {
+  mineru: "MinerU",
+  plain_text: "纯文本",
+};
+
+const parseModeClass: Record<ParseMode, string> = {
+  mineru: "bg-indigo-100 text-indigo-700",
+  plain_text: "bg-sky-100 text-sky-700",
 };
 
 function previewContent(content: string, max = 60): string {
@@ -43,10 +53,15 @@ export default function DocumentDrawer({ documentId, onClose }: DocumentDrawerPr
   const [chunkQuery, setChunkQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState(false);
+  const [parseMode, setParseMode] = useState<ParseMode>("mineru");
 
   const { data: doc, isLoading: docLoading } = useDocument(documentId);
   const { data: chunks = [], isLoading: chunksLoading } = useDocumentChunks(documentId);
   const reparse = useReparseDocument();
+
+  useEffect(() => {
+    if (doc?.parse_mode) setParseMode(doc.parse_mode);
+  }, [doc?.id, doc?.parse_mode]);
 
   const filteredChunks = useMemo(() => {
     const q = chunkQuery.trim().toLowerCase();
@@ -105,6 +120,16 @@ export default function DocumentDrawer({ documentId, onClose }: DocumentDrawerPr
                 >
                   {statusLabel[doc.status]}
                 </span>
+                <span
+                  className={cn(
+                    "rounded-full px-2 py-0.5 font-medium",
+                    parseModeClass[doc.parse_mode],
+                  )}
+                >
+                  {doc.file_type === "txt" || doc.file_type === "md"
+                    ? "纯文本（本地）"
+                    : parseModeLabel[doc.parse_mode]}
+                </span>
                 <span>上传于 {new Date(doc.created_at).toLocaleString()}</span>
               </div>
             )}
@@ -125,17 +150,42 @@ export default function DocumentDrawer({ documentId, onClose }: DocumentDrawerPr
                 {copied ? "已复制" : "复制 Markdown"}
               </button>
             )}
-            {(doc?.status === "failed" || doc?.status === "ready") && (
-              <button
-                type="button"
-                onClick={() => reparse.mutate(documentId)}
-                disabled={reparse.isPending}
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-              >
-                <RefreshCw className={cn("size-3.5", reparse.isPending && "animate-spin")} />
-                重新解析
-              </button>
-            )}
+            {(doc?.status === "failed" || doc?.status === "ready") &&
+              (doc.file_type === "pdf" ? (
+                <div className="flex items-center gap-2">
+                  <select
+                    value={parseMode}
+                    onChange={(event) => setParseMode(event.target.value as ParseMode)}
+                    className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-slate-600 outline-none"
+                  >
+                    <option value="mineru">MinerU</option>
+                    <option value="plain_text">纯文本提取</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => reparse.mutate({ id: documentId, parseMode })}
+                    disabled={reparse.isPending}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    <RefreshCw
+                      className={cn("size-3.5", reparse.isPending && "animate-spin")}
+                    />
+                    重新解析
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => reparse.mutate({ id: documentId, parseMode })}
+                  disabled={reparse.isPending}
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  <RefreshCw
+                    className={cn("size-3.5", reparse.isPending && "animate-spin")}
+                  />
+                  重新解析
+                </button>
+              ))}
             <button
               type="button"
               onClick={onClose}

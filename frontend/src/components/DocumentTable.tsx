@@ -2,7 +2,7 @@ import { Eye, Trash2 } from "lucide-react";
 
 import { useDeleteDocument, useDocuments } from "@/hooks/useDocuments";
 import { cn } from "@/lib/utils";
-import type { DocumentItem, DocumentStatus } from "@/types";
+import type { DocumentItem, DocumentStatus, ParseMode } from "@/types";
 
 const statusLabel: Record<DocumentStatus, string> = {
   pending: "待解析",
@@ -16,6 +16,16 @@ const statusClass: Record<DocumentStatus, string> = {
   parsing: "bg-sky-100 text-sky-700",
   ready: "bg-emerald-100 text-emerald-700",
   failed: "bg-red-100 text-red-700",
+};
+
+const parseModeLabel: Record<ParseMode, string> = {
+  mineru: "MinerU",
+  plain_text: "纯文本",
+};
+
+const parseModeClass: Record<ParseMode, string> = {
+  mineru: "bg-indigo-100 text-indigo-700",
+  plain_text: "bg-sky-100 text-sky-700",
 };
 
 interface DocumentTableProps {
@@ -74,6 +84,7 @@ export default function DocumentTable({
             <th className="px-4 py-3 font-medium">类型</th>
             <th className="px-4 py-3 font-medium">大小</th>
             <th className="px-4 py-3 font-medium">状态</th>
+            <th className="px-4 py-3 font-medium">解析方式</th>
             <th className="px-4 py-3 text-right font-medium">操作</th>
           </tr>
         </thead>
@@ -90,6 +101,16 @@ export default function DocumentTable({
               <td className="px-4 py-3">
                 <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", statusClass[doc.status])}>
                   {statusLabel[doc.status]}
+                </span>
+              </td>
+              <td className="px-4 py-3">
+                <span
+                  className={cn(
+                    "rounded-full px-2 py-0.5 text-xs font-medium",
+                    parseModeClass[doc.parse_mode],
+                  )}
+                >
+                  {parseModeLabel[doc.parse_mode]}
                 </span>
               </td>
               <td className="px-4 py-3 text-right">
