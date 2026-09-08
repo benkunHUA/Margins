@@ -36,6 +36,7 @@ class ChunkRow(Base):
     )
     chunk_index: Mapped[int] = mapped_column(Integer)
     content: Mapped[str] = mapped_column(Text)
+    faiss_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     heading_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     page: Mapped[int | None] = mapped_column(Integer, nullable=True)
     token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -92,3 +93,10 @@ class QueryLogRow(Base):
     steps_json: Mapped[str] = mapped_column(Text, default="[]")
     citations_json: Mapped[str] = mapped_column(Text, default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class FaissSeqRow(Base):
+    __tablename__ = "faiss_seq"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    next_id: Mapped[int] = mapped_column(Integer, default=0)

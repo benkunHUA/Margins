@@ -76,6 +76,7 @@ class Chunk(BaseModel):
     document_id: UUID
     chunk_index: int
     content: str
+    faiss_id: int | None = None
     heading_path: str | None = None
     page: int | None = None
     token_count: int | None = None

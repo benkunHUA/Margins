@@ -2,6 +2,7 @@
 
 import logging
 
+import sqlalchemy as sa
 from sqlalchemy import create_engine, inspect
 
 from app.repositories.sql.database import run_migrations
@@ -39,4 +40,19 @@ def test_migration_0003_adds_parse_mode_column(tmp_path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'margins.db'}")
     columns = {c["name"] for c in inspect(engine).get_columns("documents")}
     assert "parse_mode" in columns
+    engine.dispose()
+
+
+def test_migration_0004_adds_faiss_id_and_seq(tmp_path) -> None:
+    run_migrations(tmp_path)
+    engine = create_engine(f"sqlite:///{tmp_path / 'margins.db'}")
+    chunk_cols = {c["name"] for c in inspect(engine).get_columns("chunks")}
+    assert "faiss_id" in chunk_cols
+    tables = set(inspect(engine).get_table_names())
+    assert "faiss_seq" in tables
+    with engine.connect() as conn:
+        value = conn.execute(
+            sa.text("SELECT next_id FROM faiss_seq WHERE id=1")
+        ).scalar_one()
+        assert value == 0
     engine.dispose()
