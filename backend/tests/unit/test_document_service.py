@@ -22,9 +22,13 @@ from app.services.document_service import DocumentService
 class FakeVector:
     def __init__(self) -> None:
         self.rebuild_calls = 0
+        self.remove_calls: list[list[int]] = []
 
     async def rebuild(self, chunks) -> None:
         self.rebuild_calls += 1
+
+    async def remove(self, faiss_ids) -> None:
+        self.remove_calls.append(list(faiss_ids))
 
 
 class FakeSparse:
@@ -91,7 +95,8 @@ async def test_delete_removes_chunks_and_rebuilds(service) -> None:
     await svc.delete(doc.id)
     assert await documents.get(doc.id) is None
     assert await chunks.list_by_document(doc.id) == []
-    assert vector.rebuild_calls == 1
+    assert vector.remove_calls and vector.remove_calls[-1]
+    assert vector.rebuild_calls == 0  # 删除不再全量向量重建
 
 
 async def test_reparse_resets_and_enqueues(service) -> None:

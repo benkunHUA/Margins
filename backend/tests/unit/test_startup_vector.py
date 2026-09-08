@@ -1,4 +1,4 @@
-"""容器启动向量重建策略测试：索引完整跳过、缺失才重建、失败不阻塞启动。"""
+"""容器启动向量对账测试：faiss_id 精确集合、NULL 补号、失败不阻塞。"""
 
 from uuid import uuid4
 
@@ -20,15 +20,15 @@ class FakeEmbeddings(EmbeddingService):
 class FakeVector(VectorRepository):
     def __init__(
         self,
-        loaded: set[str] | None = None,
+        loaded: set[int] | None = None,
         *,
         fail_rebuild: bool = False,
     ) -> None:
-        self.loaded = loaded or set()
+        self.loaded = loaded if loaded is not None else set()
         self.fail_rebuild = fail_rebuild
         self.rebuild_calls = 0
 
-    def loaded_ids(self) -> set[str]:
+    def loaded_ids(self) -> set[int]:
         return set(self.loaded)
 
     async def add(self, items):
@@ -41,12 +41,15 @@ class FakeVector(VectorRepository):
         self.rebuild_calls += 1
         if self.fail_rebuild:
             raise RuntimeError("embedding boom")
-        self.loaded = {str(c.id) for c in chunks}
+        self.loaded = {c.faiss_id for c in chunks if c.faiss_id is not None}
 
     async def save(self):
         pass
 
     async def load(self):
+        pass
+
+    async def remove(self, faiss_ids):
         pass
 
 
@@ -85,15 +88,25 @@ async def test_startup_rebuilds_when_index_missing(tmp_path) -> None:
     assert vector.rebuild_calls == 1
 
 
-async def test_startup_skips_rebuild_when_all_ids_loaded(tmp_path) -> None:
+async def test_startup_skips_rebuild_when_ids_match(tmp_path) -> None:
     vector = FakeVector()
     container = await _make_container(tmp_path, vector)
-    chunk_ids = {str(c.id) for c in await container.chunks.list_all()}
-    vector.loaded = chunk_ids
+    vector.loaded = {c.faiss_id for c in await container.chunks.list_all()}
 
     await container.startup()
 
     assert vector.rebuild_calls == 0
+
+
+async def test_startup_rebuilds_when_index_has_stale_extra_ids(tmp_path) -> None:
+    vector = FakeVector()
+    container = await _make_container(tmp_path, vector)
+    chunk_ids = {c.faiss_id for c in await container.chunks.list_all()}
+    vector.loaded = chunk_ids | {99999}  # 索引含 DB 之外的孤儿
+
+    await container.startup()
+
+    assert vector.rebuild_calls == 1
 
 
 async def test_startup_survives_rebuild_failure(tmp_path) -> None:
@@ -103,3 +116,16 @@ async def test_startup_survives_rebuild_failure(tmp_path) -> None:
     await container.startup()
 
     assert vector.rebuild_calls == 1
+
+
+async def test_startup_allocates_missing_faiss_ids_then_rebuilds(tmp_path) -> None:
+    vector = FakeVector()
+    container = await _make_container(tmp_path, vector)
+    for chunk in await container.chunks.list_all():
+        chunk.faiss_id = None  # 模拟升级遗留 NULL 行
+
+    await container.startup()
+
+    assert vector.rebuild_calls == 1
+    rows = await container.chunks.list_all()
+    assert all(c.faiss_id is not None for c in rows)

@@ -84,7 +84,10 @@ class ServiceContainer:
         self.embedding = embeddings or DashScopeEmbeddingService(settings.models)
         self.chunker = chunker or MarkdownChunker()
         self.vector = vector or FaissVectorRepository(
-            settings.storage, self.embedding, settings.models.embedding_dimension
+            settings.storage,
+            self.embedding,
+            settings.models.embedding_dimension,
+            chunks=self.chunks,
         )
         self.sparse = BM25SparseIndex()
         self.llm_client = llm_client or LangChainLLMClient(settings.models)
@@ -151,20 +154,20 @@ class ServiceContainer:
         if self._engine is not None:
             await asyncio.to_thread(run_migrations, storage.data_dir)
         await self.vector.load()
-        remaining = await self.chunks.list_all()
-        missing = [
-            chunk for chunk in remaining if str(chunk.id) not in self.vector.loaded_ids()
-        ]
-        if missing:
+        rows = await self.chunks.list_all()
+        if await self.chunks.allocate_missing_ids():
+            rows = await self.chunks.list_all()
+        db_ids = {c.faiss_id for c in rows if c.faiss_id is not None}
+        if len(db_ids) == len(rows) and db_ids == self.vector.loaded_ids():
+            logger.info("向量索引已完整，跳过重建（chunks=%d）", len(rows))
+        else:
             try:
-                await self.vector.rebuild(remaining)
+                await self.vector.rebuild(rows)
             except Exception:
                 logger.warning(
                     "向量索引重建失败，启动继续（检索可能缺失部分文档）", exc_info=True
                 )
-        else:
-            logger.info("向量索引已完整，跳过重建（chunks=%d）", len(remaining))
-        await self.sparse.rebuild(remaining)
+        await self.sparse.rebuild(rows)
         if self.start_worker:
             self._worker_task = asyncio.create_task(self.worker.run())
         logger.info("容器启动完成", extra={"extra_fields": {"data_dir": str(storage.data_dir)}})

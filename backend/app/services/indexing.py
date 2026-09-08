@@ -31,6 +31,10 @@ class IndexingPipeline:
         document_id: UUID,
         doc_title: str | None = None,
     ) -> None:
+        old = await self._chunks.list_by_document(document_id)
+        await self._vector.remove(
+            [c.faiss_id for c in old if c.faiss_id is not None]
+        )
         await self._chunks.delete_by_document(document_id)  # 幂等：先清旧块
         chunks = self._chunker.chunk(markdown, document_id=document_id)
         if not chunks:

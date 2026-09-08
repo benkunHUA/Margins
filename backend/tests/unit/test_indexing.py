@@ -33,7 +33,10 @@ class FakeSparse:
 async def pipeline(tmp_path):
     chunks = InMemoryChunkRepository()
     vector = FaissVectorRepository(
-        StorageConfig(data_dir=tmp_path), FakeEmbeddingService(), dimension=4
+        StorageConfig(data_dir=tmp_path),
+        FakeEmbeddingService(),
+        dimension=4,
+        chunks=chunks,
     )
     sparse = FakeSparse()
     pipeline = IndexingPipeline(
@@ -74,6 +77,19 @@ async def test_empty_markdown_raises(pipeline) -> None:
     pipeline, _, _, _ = pipeline
     with pytest.raises(ParseFailedError):
         await pipeline.run("", document_id=uuid4())
+
+
+async def test_run_removes_old_vectors_before_reindex(pipeline) -> None:
+    pipeline, chunks, vector, _ = pipeline
+    doc_id = uuid4()
+    await pipeline.run("# 旧标题\n\n旧内容", document_id=doc_id)
+    old_ids = {c.faiss_id for c in await chunks.list_by_document(doc_id)}
+
+    await pipeline.run("# 新标题\n\n新内容", document_id=doc_id)
+
+    new_ids = {c.faiss_id for c in await chunks.list_by_document(doc_id)}
+    assert old_ids.isdisjoint(new_ids)
+    assert vector.loaded_ids() == new_ids  # 运行期即清理，无孤儿
 
 
 async def test_run_rebuilds_sparse_index(pipeline) -> None:

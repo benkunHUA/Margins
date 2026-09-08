@@ -120,6 +120,10 @@ class DocumentService:
 
     async def delete(self, doc_id: UUID) -> None:
         doc = await self.get(doc_id)
+        old_chunks = await self._chunks.list_by_document(doc_id)
+        await self._vector.remove(
+            [c.faiss_id for c in old_chunks if c.faiss_id is not None]
+        )
         await self._documents.delete(doc_id)
         await self._chunks.delete_by_document(doc_id)
         for path in (doc.file_path, doc.markdown_path):
@@ -128,7 +132,6 @@ class DocumentService:
         images_dir = self._settings.storage.parsed_dir / f"{doc.id}.images"
         await asyncio.to_thread(_safe_rmtree, images_dir)
         remaining = await self._chunks.list_all()
-        await self._vector.rebuild(remaining)
         await self._sparse.rebuild(remaining)
 
     async def reparse(
