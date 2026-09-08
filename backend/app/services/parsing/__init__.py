@@ -2,5 +2,6 @@
 
 from app.services.parsing.base import DocumentParser, ParsedDocument
 from app.services.parsing.parsers.mineru import MineruOnlineParser
+from app.services.parsing.parsers.plain_text import PlainTextParser
 
-__all__ = ["DocumentParser", "ParsedDocument", "MineruOnlineParser"]
+__all__ = ["DocumentParser", "ParsedDocument", "MineruOnlineParser", "PlainTextParser"]
