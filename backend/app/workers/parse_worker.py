@@ -18,7 +18,7 @@ from app.services.image_enrichment import (
 )
 from app.services.image_summarizer import ImageSummarizer
 from app.services.indexing import IndexingPipeline
-from app.services.parsing import MineruParser, ParsedDocument
+from app.services.parsing import DocumentParser, ParsedDocument
 
 logger = get_logger(__name__)
 
@@ -27,7 +27,7 @@ class ParseWorker:
     def __init__(
         self,
         queue: asyncio.Queue[UUID],
-        parser: MineruParser,
+        parser: DocumentParser,
         indexing: IndexingPipeline,
         documents: DocumentRepository,
         jobs: ParseJobRepository,

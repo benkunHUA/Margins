@@ -11,11 +11,11 @@ from app.repositories.memory.memory_repos import (
     InMemoryParseJobRepository,
 )
 from app.services.image_summarizer import ImageSummarizer
-from app.services.parsing import MineruParser, ParsedDocument
+from app.services.parsing import DocumentParser, ParsedDocument
 from app.workers.parse_worker import ParseWorker
 
 
-class FakeParser(MineruParser):
+class FakeParser(DocumentParser):
     def __init__(self, failures: int = 0) -> None:
         self.failures = failures
         self.calls = 0
@@ -112,7 +112,7 @@ async def test_exhausted_retries_marks_failed(tmp_path) -> None:
     assert "mineru boom" in (job.last_error or "")
 
 
-class SequenceParser(MineruParser):
+class SequenceParser(DocumentParser):
     """按调用顺序返回预置结果；None 表示该次调用抛错。"""
 
     def __init__(self, results: list[ParsedDocument | None], *, can_extract: bool = True) -> None:

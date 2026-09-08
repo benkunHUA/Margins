@@ -73,7 +73,7 @@ def test_mineru_constructed_with_api_token(monkeypatch) -> None:
         def __init__(self, token: str | None = None, **kwargs) -> None:
             captured["token"] = token
 
-    monkeypatch.setattr("app.services.parsing.MinerU", FakeMinerU)
+    monkeypatch.setattr("app.services.parsing.parsers.mineru.MinerU", FakeMinerU)
     MineruOnlineParser(ParserConfig(mineru_api_token="sk-123"))
     assert captured["token"] == "sk-123"
 
@@ -86,7 +86,7 @@ def test_injected_client_skips_constructor(monkeypatch) -> None:
             nonlocal called
             called = True
 
-    monkeypatch.setattr("app.services.parsing.MinerU", FakeMinerU)
+    monkeypatch.setattr("app.services.parsing.parsers.mineru.MinerU", FakeMinerU)
     MineruOnlineParser(
         ParserConfig(mineru_api_token="t"),
         client=FakeMineruClient(),

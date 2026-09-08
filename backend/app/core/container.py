@@ -24,7 +24,7 @@ from app.services.embedding import DashScopeEmbeddingService, EmbeddingService
 from app.services.image_summarizer import DashScopeImageSummarizer, ImageSummarizer
 from app.services.indexing import IndexingPipeline
 from app.services.llm import LangChainLLMClient, LLMClient
-from app.services.parsing import MineruOnlineParser, MineruParser
+from app.services.parsing import DocumentParser, MineruOnlineParser
 from app.services.query_log_service import QueryLogService
 from app.services.rag.context_builder import ContextBuilder
 from app.services.rag.hybrid_retriever import HybridRetriever
@@ -49,7 +49,7 @@ class ServiceContainer:
         *,
         repositories: str = "sql",
         start_worker: bool = True,
-        parser: MineruParser | None = None,
+        parser: DocumentParser | None = None,
         embeddings: EmbeddingService | None = None,
         chunker: Chunker | None = None,
         vector: VectorRepository | None = None,
