@@ -4,13 +4,19 @@ from pathlib import Path
 from uuid import UUID
 
 import anyio
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import Response
 
 from app.api.dependencies import get_document_service
-from app.api.schemas.documents import ChunkOut, DocumentDetail, DocumentOut, UploadResult
+from app.api.schemas.documents import (
+    ChunkOut,
+    DocumentDetail,
+    DocumentOut,
+    ReparseRequest,
+    UploadResult,
+)
 from app.domain.entities import Page
-from app.domain.enums import DocumentStatus
+from app.domain.enums import DocumentStatus, ParseMode
 from app.services.document_service import DocumentService
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -19,9 +25,10 @@ router = APIRouter(prefix="/api/documents", tags=["documents"])
 @router.post("", status_code=202, response_model=list[UploadResult])
 async def upload_documents(
     files: list[UploadFile] = File(...),
+    parse_mode: ParseMode = Form(ParseMode.MINERU),
     service: DocumentService = Depends(get_document_service),
 ) -> list[UploadResult]:
-    results = await service.upload(files)
+    results = await service.upload(files, parse_mode=parse_mode)
     return [UploadResult(**item) for item in results]
 
 
@@ -77,6 +84,10 @@ async def delete_document(
 @router.post("/{document_id}/reparse", status_code=202)
 async def reparse_document(
     document_id: UUID,
+    body: ReparseRequest | None = None,
     service: DocumentService = Depends(get_document_service),
 ) -> dict:
-    return await service.reparse(document_id)
+    return await service.reparse(
+        document_id,
+        body.parse_mode if body is not None else None,
+    )

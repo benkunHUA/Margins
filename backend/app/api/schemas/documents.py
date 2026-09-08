@@ -5,13 +5,18 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from app.domain.enums import DocumentStatus
+from app.domain.enums import DocumentStatus, ParseMode
 
 
 class UploadResult(BaseModel):
     document_id: UUID
     filename: str
     status: DocumentStatus
+    parse_mode: ParseMode
+
+
+class ReparseRequest(BaseModel):
+    parse_mode: ParseMode | None = None
 
 
 class DocumentOut(BaseModel):
@@ -22,6 +27,7 @@ class DocumentOut(BaseModel):
     file_type: str
     file_size: int
     status: DocumentStatus
+    parse_mode: ParseMode
     parse_error: str | None = None
     created_at: datetime
     updated_at: datetime

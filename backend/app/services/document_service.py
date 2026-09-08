@@ -20,7 +20,7 @@ from app.core.exceptions import (
     InvalidFileTypeError,
 )
 from app.domain.entities import Chunk, Document, Page, ParseJob
-from app.domain.enums import DocumentStatus
+from app.domain.enums import DocumentStatus, ParseMode
 from app.repositories.base import (
     ChunkRepository,
     DocumentRepository,
@@ -50,13 +50,18 @@ class DocumentService:
         self._settings = settings
         self._max_file_size_bytes = max_file_size_bytes
 
-    async def upload(self, files: Sequence[UploadFile]) -> list[dict]:
+    async def upload(
+        self,
+        files: Sequence[UploadFile],
+        parse_mode: ParseMode = ParseMode.MINERU,
+    ) -> list[dict]:
         results: list[dict] = []
         for file in files:
             filename = file.filename or "unnamed"
             ext = Path(filename).suffix.lower().lstrip(".")
             if ext not in SUPPORTED_FILE_TYPES:
                 raise InvalidFileTypeError(f"不支持的文件类型: {ext}")
+            effective = _effective_parse_mode(ext, parse_mode)
 
             content = await file.read()
             if len(content) > self._max_file_size_bytes:
@@ -76,6 +81,7 @@ class DocumentService:
                 file_type=ext,
                 file_size=len(content),
                 file_path=dest,
+                parse_mode=effective,
                 created_at=now,
                 updated_at=now,
             )
@@ -83,7 +89,12 @@ class DocumentService:
             await self._jobs.create(ParseJob(document_id=doc.id, queued_at=now))
             await self._parse_queue.put(doc.id)
             results.append(
-                {"document_id": doc.id, "filename": doc.filename, "status": doc.status.value}
+                {
+                    "document_id": doc.id,
+                    "filename": doc.filename,
+                    "status": doc.status.value,
+                    "parse_mode": effective.value,
+                }
             )
         return results
 
@@ -120,8 +131,16 @@ class DocumentService:
         await self._vector.rebuild(remaining)
         await self._sparse.rebuild(remaining)
 
-    async def reparse(self, doc_id: UUID) -> dict:
+    async def reparse(
+        self,
+        doc_id: UUID,
+        parse_mode: ParseMode | None = None,
+    ) -> dict:
         doc = await self.get(doc_id)
+        if parse_mode is not None:
+            doc.parse_mode = _effective_parse_mode(doc.file_type, parse_mode)
+            doc.updated_at = datetime.now(UTC)
+            await self._documents.update(doc)
         now = datetime.now(UTC)
         doc.status = DocumentStatus.PENDING
         doc.parse_error = None
@@ -129,7 +148,11 @@ class DocumentService:
         await self._documents.update(doc)
         job = await self._jobs.create(ParseJob(document_id=doc.id, queued_at=now))
         await self._parse_queue.put(doc.id)
-        return {"job_id": str(job.id), "status": job.status.value}
+        return {
+            "job_id": str(job.id),
+            "status": job.status.value,
+            "parse_mode": doc.parse_mode.value,
+        }
 
 
 def _safe_unlink(path: Path) -> None:
@@ -141,3 +164,11 @@ def _safe_unlink(path: Path) -> None:
 
 def _safe_rmtree(path: Path) -> None:
     shutil.rmtree(path, ignore_errors=True)
+
+
+def _effective_parse_mode(file_type: str, chosen: ParseMode) -> ParseMode:
+    if file_type in ("txt", "md"):
+        return ParseMode.PLAIN_TEXT
+    if file_type == "pdf":
+        return chosen
+    return ParseMode.MINERU
