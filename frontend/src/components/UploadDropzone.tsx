@@ -3,11 +3,16 @@ import { UploadCloud } from "lucide-react";
 
 import { useUploadDocuments } from "@/hooks/useDocuments";
 import { cn } from "@/lib/utils";
+import type { ParseMode } from "@/types";
 
 const ACCEPTED = ".pdf,.docx,.md,.txt";
 const ALLOWED_EXTENSIONS = ["pdf", "docx", "md", "txt"];
 
-export default function UploadDropzone() {
+interface UploadDropzoneProps {
+  parseMode: ParseMode;
+}
+
+export default function UploadDropzone({ parseMode }: UploadDropzoneProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -30,7 +35,7 @@ export default function UploadDropzone() {
       valid.length !== files.length ? "包含不支持的文件类型（仅支持 PDF / Word / Markdown / TXT）" : null,
     );
     if (valid.length === 0) return;
-    upload.mutate(valid);
+    upload.mutate({ files: valid, parseMode });
   };
 
   return (
