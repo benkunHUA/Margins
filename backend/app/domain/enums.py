@@ -20,3 +20,8 @@ class ParseJobStatus(StrEnum):
 class MessageRole(StrEnum):
     USER = "user"
     ASSISTANT = "assistant"
+
+
+class ParseMode(StrEnum):
+    MINERU = "mineru"
+    PLAIN_TEXT = "plain_text"

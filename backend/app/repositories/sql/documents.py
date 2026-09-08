@@ -10,7 +10,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.domain.entities import Document, Page
-from app.domain.enums import DocumentStatus
+from app.domain.enums import DocumentStatus, ParseMode
 from app.repositories.base import DocumentRepository
 from app.repositories.sql.models import DocumentRow
 
@@ -22,6 +22,7 @@ def _row(doc: Document) -> DocumentRow:
         file_type=doc.file_type,
         file_size=doc.file_size,
         file_path=str(doc.file_path),
+        parse_mode=doc.parse_mode.value,
         markdown_path=str(doc.markdown_path) if doc.markdown_path else None,
         status=doc.status.value,
         parse_error=doc.parse_error,
@@ -38,6 +39,7 @@ def _entity(row: DocumentRow) -> Document:
         file_type=row.file_type,
         file_size=row.file_size,
         file_path=Path(row.file_path),
+        parse_mode=ParseMode(row.parse_mode),
         markdown_path=Path(row.markdown_path) if row.markdown_path else None,
         status=DocumentStatus(row.status),
         parse_error=row.parse_error,
@@ -52,6 +54,7 @@ def _apply(row: DocumentRow, doc: Document) -> None:
     row.file_type = doc.file_type
     row.file_size = doc.file_size
     row.file_path = str(doc.file_path)
+    row.parse_mode = doc.parse_mode.value
     row.markdown_path = str(doc.markdown_path) if doc.markdown_path else None
     row.status = doc.status.value
     row.parse_error = doc.parse_error

@@ -32,3 +32,11 @@ def test_migrations_do_not_touch_logging(tmp_path) -> None:
 
     assert root.level == old_level
     assert root.handlers == old_handlers
+
+
+def test_migration_0003_adds_parse_mode_column(tmp_path) -> None:
+    run_migrations(tmp_path)
+    engine = create_engine(f"sqlite:///{tmp_path / 'margins.db'}")
+    columns = {c["name"] for c in inspect(engine).get_columns("documents")}
+    assert "parse_mode" in columns
+    engine.dispose()

@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.domain.enums import DocumentStatus, MessageRole, ParseJobStatus
+from app.domain.enums import DocumentStatus, MessageRole, ParseJobStatus, ParseMode
 
 
 def _now() -> datetime:
@@ -60,6 +60,7 @@ class Document(BaseModel):
     file_type: str
     file_size: int
     file_path: Path
+    parse_mode: ParseMode = ParseMode.MINERU
     markdown_path: Path | None = None
     status: DocumentStatus = DocumentStatus.PENDING
     parse_error: str | None = None

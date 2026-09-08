@@ -18,6 +18,7 @@ class DocumentRow(Base):
     file_type: Mapped[str] = mapped_column(String(16))
     file_size: Mapped[int] = mapped_column(Integer)
     file_path: Mapped[str] = mapped_column(String(1024))
+    parse_mode: Mapped[str] = mapped_column(String(16), default="mineru")
     markdown_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="pending")
     parse_error: Mapped[str | None] = mapped_column(Text, nullable=True)
