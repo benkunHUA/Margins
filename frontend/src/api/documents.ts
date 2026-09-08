@@ -1,5 +1,12 @@
 import { request } from "@/api/client";
-import type { ChunkItem, DocumentDetail, DocumentItem, DocumentStatus, Page } from "@/types";
+import type {
+  ChunkItem,
+  DocumentDetail,
+  DocumentItem,
+  DocumentStatus,
+  Page,
+  ParseMode,
+} from "@/types";
 
 export interface ListDocumentsParams {
   page?: number;
@@ -26,10 +33,13 @@ export function getDocumentChunks(id: string) {
   return request<ChunkItem[]>(`/documents/${id}/chunks`);
 }
 
-export async function uploadDocuments(files: File[]) {
+export async function uploadDocuments(files: File[], parseMode: ParseMode = "mineru") {
   const form = new FormData();
   files.forEach((file) => form.append("files", file));
-  return request<{ document_id: string; filename: string; status: DocumentStatus }[]>(
+  form.append("parse_mode", parseMode);
+  return request<
+    { document_id: string; filename: string; status: DocumentStatus; parse_mode: ParseMode }[]
+  >(
     "/documents",
     { method: "POST", body: form },
   );
@@ -39,8 +49,13 @@ export function deleteDocument(id: string) {
   return request<void>(`/documents/${id}`, { method: "DELETE" });
 }
 
-export function reparseDocument(id: string) {
-  return request<{ job_id: string; status: string }>(`/documents/${id}/reparse`, {
-    method: "POST",
-  });
+export function reparseDocument(id: string, parseMode?: ParseMode) {
+  return request<{ job_id: string; status: string; parse_mode: ParseMode }>(
+    `/documents/${id}/reparse`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ parse_mode: parseMode }),
+    },
+  );
 }

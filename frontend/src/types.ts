@@ -1,4 +1,5 @@
 export type DocumentStatus = "pending" | "parsing" | "ready" | "failed";
+export type ParseMode = "mineru" | "plain_text";
 export type MessageRole = "user" | "assistant";
 
 export interface DocumentItem {
@@ -7,6 +8,7 @@ export interface DocumentItem {
   file_type: string;
   file_size: number;
   status: DocumentStatus;
+  parse_mode: ParseMode;
   parse_error: string | null;
   created_at: string;
   updated_at: string;

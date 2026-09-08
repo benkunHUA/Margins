@@ -10,7 +10,7 @@ import {
   uploadDocuments,
 } from "@/api/documents";
 import { useDocumentStore } from "@/stores/documentStore";
-import type { DocumentStatus } from "@/types";
+import type { DocumentStatus, ParseMode } from "@/types";
 
 export function useDocuments(page = 1, pageSize = 20, status?: DocumentStatus) {
   const keyword = useDocumentStore((state) => state.keyword);
@@ -53,7 +53,10 @@ export function useDocumentChunks(id: string | null) {
 export function useUploadDocuments() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (files: File[]) => uploadDocuments(files),
+    mutationFn: (input: File[] | { files: File[]; parseMode: ParseMode }) =>
+      Array.isArray(input)
+        ? uploadDocuments(input)
+        : uploadDocuments(input.files, input.parseMode),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["documents"] }),
   });
 }
@@ -69,8 +72,13 @@ export function useDeleteDocument() {
 export function useReparseDocument() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => reparseDocument(id),
-    onSuccess: (_data, id) => {
+    mutationFn: (input: string | { id: string; parseMode?: ParseMode }) => {
+      const id = typeof input === "string" ? input : input.id;
+      const parseMode = typeof input === "string" ? undefined : input.parseMode;
+      return reparseDocument(id, parseMode);
+    },
+    onSuccess: (_data, input) => {
+      const id = typeof input === "string" ? input : input.id;
       queryClient.invalidateQueries({ queryKey: ["documents"] });
       queryClient.invalidateQueries({ queryKey: ["document", id] });
       queryClient.invalidateQueries({ queryKey: ["document-chunks", id] });
