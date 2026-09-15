@@ -8,9 +8,18 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.domain.enums import DocumentStatus, MessageRole, ParseJobStatus, ParseMode
+from app.domain.enums import (
+    DocumentStatus,
+    EvalItemStatus,
+    EvalMode,
+    EvalRunStatus,
+    MessageRole,
+    ParseJobStatus,
+    ParseMode,
+    ResolutionSource,
+)
 
 
 def _now() -> datetime:
@@ -115,3 +124,105 @@ class Page[T](BaseModel):
     total: int
     page: int
     page_size: int
+
+
+_CATEGORIES = {"single_doc_fact", "multi_paragraph", "multi_doc", "table_number", "no_answer"}
+
+
+class EvalGold(BaseModel):
+    doc_title: str
+    chunk_id: UUID | None = None
+    snippet: str | None = None
+    keywords: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _require_locator(self) -> "EvalGold":
+        if not (self.chunk_id or self.snippet or self.keywords):
+            raise ValueError("gold 至少需要 chunk_id / snippet / keywords 之一")
+        return self
+
+
+class EvalItemPayload(BaseModel):
+    id: str = Field(min_length=1, max_length=64)
+    question: str = Field(min_length=1, max_length=2000)
+    category: str
+    gold: list[EvalGold] = Field(default_factory=list)
+    expected_answer_points: list[str] = Field(default_factory=list)
+    notes: str = ""
+
+    @model_validator(mode="after")
+    def _validate_category_and_gold(self) -> "EvalItemPayload":
+        if self.category not in _CATEGORIES:
+            raise ValueError(f"未知 category: {self.category}")
+        if self.category == "no_answer" and self.gold:
+            raise ValueError("no_answer 题不能标注 gold")
+        if self.category != "no_answer" and not self.gold:
+            raise ValueError("非 no_answer 题必须至少一条 gold")
+        return self
+
+
+class EvalDatasetPayload(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    description: str = ""
+    items: list[EvalItemPayload] = Field(min_length=1, max_length=500)
+
+    @model_validator(mode="after")
+    def _unique_items(self) -> "EvalDatasetPayload":
+        ids = [item.id for item in self.items]
+        if len(set(ids)) != len(ids):
+            raise ValueError("item id 必须唯一")
+        return self
+
+
+class EvalRunConfig(BaseModel):
+    recall_k: int = Field(30, ge=1, le=200)
+    rerank_top_n: int = Field(6, ge=1, le=50)
+    relevance_threshold: float = Field(0.3, ge=0.0, le=1.0)
+    rewrite_enabled: bool = True
+    rerank_model: str | None = None
+
+
+class EvalDataset(BaseModel):
+    id: UUID = Field(default_factory=uuid4)
+    name: str
+    description: str = ""
+    payload: EvalDatasetPayload
+    item_count: int = 0
+    category_counts: dict[str, int] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+
+
+class EvalRun(BaseModel):
+    id: UUID = Field(default_factory=uuid4)
+    dataset_id: UUID
+    mode: EvalMode = EvalMode.RETRIEVAL
+    status: EvalRunStatus = EvalRunStatus.QUEUED
+    configs: list[EvalRunConfig] = Field(default_factory=list)
+    progress_done: int = 0
+    progress_total: int = 0
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None
+    created_at: datetime = Field(default_factory=_now)
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+class EvalRunItem(BaseModel):
+    id: UUID = Field(default_factory=uuid4)
+    run_id: UUID
+    config_index: int
+    question_id: str
+    category: str
+    item_status: EvalItemStatus
+    resolution_source: ResolutionSource
+    relocated: bool = False
+    error: str | None = None
+    best_rank: int | None = None
+    recall: dict[str, Any] = Field(default_factory=dict)
+    ndcg: float | None = None
+    retrieved: list[dict] = Field(default_factory=list)
+    gold_matched: list[str] = Field(default_factory=list)
+    citations: list[Citation] = Field(default_factory=list)
+    durations: dict[str, float] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=_now)

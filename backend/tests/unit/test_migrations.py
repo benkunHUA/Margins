@@ -56,3 +56,11 @@ def test_migration_0004_adds_faiss_id_and_seq(tmp_path) -> None:
         ).scalar_one()
         assert value == 0
     engine.dispose()
+
+
+def test_migration_0005_creates_eval_tables(tmp_path) -> None:
+    run_migrations(tmp_path)
+    engine = create_engine(f"sqlite:///{tmp_path / 'margins.db'}")
+    tables = set(inspect(engine).get_table_names())
+    assert {"eval_datasets", "eval_runs", "eval_run_items"} <= tables
+    engine.dispose()
