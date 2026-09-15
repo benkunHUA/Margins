@@ -1,6 +1,7 @@
 """评估仓储测试（内存 + SQL 同套断言）。"""
 
-from uuid import uuid4
+from datetime import UTC, datetime
+from uuid import UUID, uuid4
 
 from app.domain.entities import (
     EvalDataset,
@@ -120,5 +121,89 @@ async def test_sql_eval_repositories(tmp_path) -> None:
             EvalRunSqlRepository(session_factory),
             EvalRunItemSqlRepository(session_factory),
         )
+    finally:
+        await engine.dispose()
+
+
+async def test_sql_repository_normalizes_legacy_gold_matched(tmp_path) -> None:
+    """早期 run 的 gold_matched 是字符串数组，读取时应归一化为结构化明细。"""
+    import json
+
+    from sqlalchemy import insert
+
+    from app.repositories.sql.models import (
+        EvalDatasetRow,
+        EvalRunItemRow,
+        EvalRunRow,
+    )
+
+    engine, session_factory = create_engine_and_sessionmaker(tmp_path)
+    await init_db(engine)
+    item_id = str(uuid4())
+    run_id = str(uuid4())
+    dataset_id = str(uuid4())
+    try:
+        async with session_factory() as session:
+            session.add(
+                EvalDatasetRow(
+                    id=dataset_id,
+                    name="legacy",
+                    description="",
+                    payload_json=json.dumps(
+                        {
+                            "name": "legacy",
+                            "description": "",
+                            "items": [
+                                {
+                                    "id": "q1",
+                                    "question": "q",
+                                    "category": "single_doc_fact",
+                                    "gold": [{"doc_title": "a.pdf", "keywords": ["k"]}],
+                                }
+                            ],
+                        },
+                        ensure_ascii=False,
+                    ),
+                    item_count=1,
+                    category_counts_json="{}",
+                    created_at=datetime.now(UTC),
+                    updated_at=datetime.now(UTC),
+                )
+            )
+            session.add(
+                EvalRunRow(
+                    id=run_id,
+                    dataset_id=dataset_id,
+                    mode="retrieval",
+                    status="succeeded",
+                    configs_json="[]",
+                    progress_done=1,
+                    progress_total=1,
+                    metrics_json="{}",
+                    created_at=datetime.now(UTC),
+                )
+            )
+            await session.commit()
+            await session.execute(
+                insert(EvalRunItemRow).values(
+                    id=item_id,
+                    run_id=run_id,
+                    config_index=0,
+                    question_id="q1",
+                    question="q",
+                    category="single_doc_fact",
+                    item_status="miss",
+                    resolution_source="keywords",
+                    relocated=True,
+                    gold_matched_json='["legacy-chunk-id"]',
+                    created_at=datetime.now(UTC),
+                )
+            )
+            await session.commit()
+
+        page = await EvalRunItemSqlRepository(session_factory).list(
+            run_id=UUID(run_id), page=1, page_size=10
+        )
+        assert page.items[0].gold_matched[0]["chunk_id"] == "legacy-chunk-id"
     finally:
         await engine.dispose()

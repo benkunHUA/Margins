@@ -279,6 +279,12 @@ def _item_row(item: EvalRunItem) -> EvalRunItemRow:
 
 
 def _item_entity(row: EvalRunItemRow) -> EvalRunItem:
+    gold_matched = [
+        gold
+        if isinstance(gold, dict)
+        else {"chunk_id": str(gold), "doc_title": "", "heading_path": None, "snippet": ""}
+        for gold in json.loads(row.gold_matched_json)
+    ]
     return EvalRunItem(
         id=UUID(row.id),
         run_id=UUID(row.run_id),
@@ -294,7 +300,7 @@ def _item_entity(row: EvalRunItemRow) -> EvalRunItem:
         recall=json.loads(row.recall_json),
         ndcg=row.ndcg,
         retrieved=json.loads(row.retrieved_json),
-        gold_matched=json.loads(row.gold_matched_json),
+        gold_matched=gold_matched,
         citations=[Citation.model_validate(c) for c in json.loads(row.citations_json)],
         durations=json.loads(row.durations_json),
         diagnostics=json.loads(row.diagnostics_json),
