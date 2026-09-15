@@ -109,6 +109,12 @@ class EvalRunner:
             documents = await self._documents.list_all()
             title_by_doc_id = {str(doc.id): doc.filename for doc in documents}
             chunks = await self._chunks.list_all()
+            chunk_by_id = {str(chunk.id): chunk for chunk in chunks}
+            doc_title_by_chunk = {
+                str(chunk.id): title_by_doc_id.get(str(chunk.document_id))
+                or chunk.metadata.get("doc_title", "")
+                for chunk in chunks
+            }
             chunks_by_doc_title: dict[str, list[Chunk]] = {}
             for chunk in chunks:
                 title = title_by_doc_id.get(str(chunk.document_id))
@@ -147,6 +153,8 @@ class EvalRunner:
                         retrieval_config=retrieval_config,
                         rewrite_cache=rewrite_cache,
                         rewrite_enabled=config.rewrite_enabled,
+                        chunk_by_id=chunk_by_id,
+                        doc_title_by_chunk=doc_title_by_chunk,
                     )
                     await self._items.add_many([row])
                     if row.item_status not in (
@@ -241,12 +249,15 @@ class EvalRunner:
         retrieval_config: RetrievalConfig,
         rewrite_cache: dict[tuple[str, bool], list[str]],
         rewrite_enabled: bool,
+        chunk_by_id: dict[str, Chunk],
+        doc_title_by_chunk: dict[str, str],
     ) -> EvalRunItem:
         started = time.perf_counter()
         base = dict(
             run_id=run.id,
             config_index=config_index,
             question_id=item.id,
+            question=item.question,
             category=item.category,
             resolution_source=resolution.source,
             relocated=resolution.relocated,
@@ -268,7 +279,10 @@ class EvalRunner:
             rewrite_ms = round((time.perf_counter() - t0) * 1000, 1)
 
             t0 = time.perf_counter()
-            result_lists = [await hybrid.retrieve(query) for query in queries]
+            diagnostics: dict[str, int] = {}
+            result_lists = [
+                await hybrid.retrieve(query, stats=diagnostics) for query in queries
+            ]
             candidates = merge_candidates(result_lists)
             retrieve_ms = round((time.perf_counter() - t0) * 1000, 1)
 
@@ -288,7 +302,10 @@ class EvalRunner:
                     "rank": index,
                     "chunk_id": str(scored.chunk.id),
                     "doc_title": scored.chunk.metadata.get("doc_title"),
+                    "heading_path": scored.chunk.heading_path,
+                    "snippet": scored.chunk.content[:120],
                     "score": round(scored.score, 4),
+                    "matched": str(scored.chunk.id) in gold_ids,
                 }
                 for index, scored in enumerate(
                     candidates[: retrieval_config.recall_k], start=1
@@ -301,13 +318,26 @@ class EvalRunner:
                 recall=recall_flags(ranked_ids, gold_ids),
                 ndcg=round(ndcg_at_k(ranked_ids, gold_ids), 4),
                 retrieved=retrieved,
-                gold_matched=sorted(gold_ids),
+                gold_matched=[
+                    {
+                        "chunk_id": chunk_id,
+                        "doc_title": doc_title_by_chunk.get(chunk_id, ""),
+                        "heading_path": chunk_by_id[chunk_id].heading_path
+                        if chunk_id in chunk_by_id
+                        else None,
+                        "snippet": chunk_by_id[chunk_id].content[:200]
+                        if chunk_id in chunk_by_id
+                        else "",
+                    }
+                    for chunk_id in sorted(gold_ids)
+                ],
                 durations={
                     "rewrite": rewrite_ms,
                     "retrieve": retrieve_ms,
                     "rerank": rerank_ms,
                     "total": round((time.perf_counter() - started) * 1000, 1),
                 },
+                diagnostics=diagnostics,
             )
 
             if run.mode.value == "full":

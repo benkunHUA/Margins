@@ -54,6 +54,7 @@ class RunItemOut(BaseModel):
     id: UUID
     config_index: int
     question_id: str
+    question: str
     category: str
     item_status: EvalItemStatus
     resolution_source: ResolutionSource
@@ -65,3 +66,4 @@ class RunItemOut(BaseModel):
     retrieved: list[dict]
     gold_matched: list[str]
     citations: list
+    diagnostics: dict

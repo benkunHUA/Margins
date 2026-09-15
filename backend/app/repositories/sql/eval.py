@@ -260,6 +260,7 @@ def _item_row(item: EvalRunItem) -> EvalRunItemRow:
         run_id=str(item.run_id),
         config_index=item.config_index,
         question_id=item.question_id,
+        question=item.question,
         category=item.category,
         item_status=item.item_status.value,
         resolution_source=item.resolution_source.value,
@@ -272,6 +273,7 @@ def _item_row(item: EvalRunItem) -> EvalRunItemRow:
         gold_matched_json=_json(item.gold_matched),
         citations_json=_json([c.model_dump(mode="json") for c in item.citations]),
         durations_json=_json(item.durations),
+        diagnostics_json=_json(item.diagnostics),
         created_at=item.created_at,
     )
 
@@ -282,6 +284,7 @@ def _item_entity(row: EvalRunItemRow) -> EvalRunItem:
         run_id=UUID(row.run_id),
         config_index=row.config_index,
         question_id=row.question_id,
+        question=row.question,
         category=row.category,
         item_status=EvalItemStatus(row.item_status),
         resolution_source=ResolutionSource(row.resolution_source),
@@ -294,5 +297,6 @@ def _item_entity(row: EvalRunItemRow) -> EvalRunItem:
         gold_matched=json.loads(row.gold_matched_json),
         citations=[Citation.model_validate(c) for c in json.loads(row.citations_json)],
         durations=json.loads(row.durations_json),
+        diagnostics=json.loads(row.diagnostics_json),
         created_at=row.created_at,
     )

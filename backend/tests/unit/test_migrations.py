@@ -64,3 +64,11 @@ def test_migration_0005_creates_eval_tables(tmp_path) -> None:
     tables = set(inspect(engine).get_table_names())
     assert {"eval_datasets", "eval_runs", "eval_run_items"} <= tables
     engine.dispose()
+
+
+def test_migration_0006_adds_item_detail_columns(tmp_path) -> None:
+    run_migrations(tmp_path)
+    engine = create_engine(f"sqlite:///{tmp_path / 'margins.db'}")
+    columns = {c["name"] for c in inspect(engine).get_columns("eval_run_items")}
+    assert {"question", "diagnostics_json"} <= columns
+    engine.dispose()

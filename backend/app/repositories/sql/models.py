@@ -143,6 +143,7 @@ class EvalRunItemRow(Base):
     )
     config_index: Mapped[int] = mapped_column(Integer)
     question_id: Mapped[str] = mapped_column(String(64))
+    question: Mapped[str] = mapped_column(Text, default="")
     category: Mapped[str] = mapped_column(String(32))
     item_status: Mapped[str] = mapped_column(String(16), index=True)
     resolution_source: Mapped[str] = mapped_column(String(16), default="invalid")
@@ -155,4 +156,5 @@ class EvalRunItemRow(Base):
     gold_matched_json: Mapped[str] = mapped_column(Text, default="[]")
     citations_json: Mapped[str] = mapped_column(Text, default="[]")
     durations_json: Mapped[str] = mapped_column(Text, default="{}")
+    diagnostics_json: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime)

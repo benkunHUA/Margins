@@ -213,6 +213,7 @@ class EvalRunItem(BaseModel):
     run_id: UUID
     config_index: int
     question_id: str
+    question: str = ""
     category: str
     item_status: EvalItemStatus
     resolution_source: ResolutionSource
@@ -222,7 +223,8 @@ class EvalRunItem(BaseModel):
     recall: dict[str, Any] = Field(default_factory=dict)
     ndcg: float | None = None
     retrieved: list[dict] = Field(default_factory=list)
-    gold_matched: list[str] = Field(default_factory=list)
+    gold_matched: list[dict] = Field(default_factory=list)
     citations: list[Citation] = Field(default_factory=list)
     durations: dict[str, float] = Field(default_factory=dict)
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=_now)

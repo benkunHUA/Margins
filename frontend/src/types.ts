@@ -176,13 +176,24 @@ export interface EvalRetrievedRow {
   rank: number;
   chunk_id: string;
   doc_title?: string | null;
+  heading_path?: string | null;
+  snippet?: string;
   score?: number;
+  matched?: boolean;
+}
+
+export interface EvalGoldDetail {
+  chunk_id: string;
+  doc_title?: string;
+  heading_path?: string | null;
+  snippet?: string;
 }
 
 export interface EvalRunItem {
   id: string;
   config_index: number;
   question_id: string;
+  question: string;
   category: string;
   item_status: EvalItemStatus;
   resolution_source: "chunk_id" | "snippet" | "keywords" | "invalid";
@@ -192,6 +203,7 @@ export interface EvalRunItem {
   recall: Record<string, boolean | number>;
   ndcg: number | null;
   retrieved: EvalRetrievedRow[];
-  gold_matched: string[];
+  gold_matched: EvalGoldDetail[];
   citations: Citation[];
+  diagnostics: Record<string, number>;
 }

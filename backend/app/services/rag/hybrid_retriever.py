@@ -28,7 +28,13 @@ class HybridRetriever:
         self._fusion = fusion
         self._config = config
 
-    async def retrieve(self, query: str, *, trace=None) -> list[ScoredChunk]:
+    async def retrieve(
+        self,
+        query: str,
+        *,
+        trace=None,
+        stats: dict | None = None,
+    ) -> list[ScoredChunk]:
         start = time.perf_counter()
         embedding = await self._embeddings.embed_query(query)
         dense_raw = await self._vector.search(embedding, self._config.recall_k)
@@ -42,6 +48,14 @@ class HybridRetriever:
             k=RRF_K,
             top_n=self._config.recall_k,
         )
+        if stats is not None:
+            for key, value in {
+                "dense_raw": len(dense_raw),
+                "dense_filtered": len(dense),
+                "sparse": len(sparse),
+                "fused": len(fused),
+            }.items():
+                stats[key] = stats.get(key, 0) + value
         logger.info(
             "混合检索完成",
             extra={
