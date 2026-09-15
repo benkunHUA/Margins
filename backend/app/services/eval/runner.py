@@ -79,6 +79,10 @@ class EvalRunner:
             raise RuntimeError("已有评估任务在运行")
         self._task = asyncio.create_task(self._execute(run_id))
 
+    async def run(self, run_id: UUID) -> None:
+        """同步执行（CLI 用），与 start 共享同一执行逻辑。"""
+        await self._execute(run_id)
+
     async def shutdown(self) -> None:
         if self._task is not None and not self._task.done():
             self._task.cancel()
