@@ -2,6 +2,7 @@
 
 import re
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from uuid import UUID
 
 from app.domain.entities import Chunk, EvalGold, EvalItemPayload
@@ -68,7 +69,7 @@ def resolve_item_gold(
     if item.category == "no_answer":
         return ItemGoldResolution(source=ResolutionSource.INVALID)
     resolutions = [
-        resolve_gold(gold, chunks=chunks_by_doc_title.get(gold.doc_title, []))
+        resolve_gold(gold, chunks=_lookup_chunks(gold.doc_title, chunks_by_doc_title))
         for gold in item.gold
     ]
     chunk_ids: list[UUID] = []
@@ -87,3 +88,28 @@ def resolve_item_gold(
         source=source,
         relocated=source != ResolutionSource.CHUNK_ID,
     )
+
+
+def _lookup_chunks(
+    doc_title: str,
+    chunks_by_doc_title: dict[str, list[Chunk]],
+) -> list[Chunk]:
+    """文档名容错匹配：精确 → 去空白相等 → 互相包含 → 相似度 ≥0.8。"""
+    if doc_title in chunks_by_doc_title:
+        return chunks_by_doc_title[doc_title]
+    target = _norm(doc_title)
+    normalized = {_norm(title): chunks for title, chunks in chunks_by_doc_title.items()}
+    if target in normalized:
+        return normalized[target]
+    for title, chunks in normalized.items():
+        if target and (target in title or title in target):
+            return chunks
+    best_title = ""
+    best_ratio = 0.0
+    for title in normalized:
+        ratio = SequenceMatcher(None, target, title).ratio()
+        if ratio > best_ratio:
+            best_title, best_ratio = title, ratio
+    if best_ratio >= 0.8:
+        return normalized[best_title]
+    return []

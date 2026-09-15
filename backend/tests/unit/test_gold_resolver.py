@@ -68,3 +68,30 @@ def test_resolve_item_aggregates_multiple_gold() -> None:
     assert set(result.chunk_ids) == {c1.id, c2.id}
     assert result.relocated is True
     assert result.invalid is False
+
+
+def test_resolve_item_matches_doc_title_ignoring_spaces() -> None:
+    """知识库文件名与 golden 标注可能只差空格/引号，需容错匹配。"""
+    chunk = _chunk("上半年实现营业收入人民币236.58亿元")
+    item = EvalItemPayload(
+        id="q1",
+        question="q",
+        category="single_doc_fact",
+        gold=[
+            EvalGold(
+                doc_title="华泰证券股份有限公司2026年度“提质增效重回报”行动方案落实情况半年度报告.pdf",
+                snippet="实现营业收入人民币236.58亿元",
+            )
+        ],
+    )
+    result = resolve_item_gold(
+        item,
+        chunks_by_doc_title={
+            "华泰证券股份有限公司2026 年度“提质增效重回报”行动方案落实情况半年度报告.pdf": [
+                chunk
+            ]
+        },
+    )
+    assert result.invalid is False
+    assert result.chunk_ids == [chunk.id]
+    assert result.source == ResolutionSource.SNIPPET
