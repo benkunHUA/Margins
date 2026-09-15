@@ -12,13 +12,16 @@ from uuid import UUID
 from app.domain.entities import (
     Chunk,
     Document,
+    EvalDataset,
+    EvalRun,
+    EvalRunItem,
     Message,
     Page,
     ParseJob,
     QueryLog,
     Session,
 )
-from app.domain.enums import DocumentStatus
+from app.domain.enums import DocumentStatus, EvalItemStatus
 
 
 class DocumentRepository(ABC):
@@ -125,3 +128,57 @@ class QueryLogRepository(ABC):
         session_id: UUID | None = None,
         status: str | None = None,
     ) -> Page[QueryLog]: ...
+
+
+class EvalDatasetRepository(ABC):
+    @abstractmethod
+    async def create(self, dataset: EvalDataset) -> EvalDataset: ...
+
+    @abstractmethod
+    async def get(self, dataset_id: UUID) -> EvalDataset | None: ...
+
+    @abstractmethod
+    async def get_by_name(self, name: str) -> EvalDataset | None: ...
+
+    @abstractmethod
+    async def list_all(self) -> list[EvalDataset]: ...
+
+    @abstractmethod
+    async def delete(self, dataset_id: UUID) -> None: ...
+
+
+class EvalRunRepository(ABC):
+    @abstractmethod
+    async def create(self, run: EvalRun) -> EvalRun: ...
+
+    @abstractmethod
+    async def update(self, run: EvalRun) -> EvalRun: ...
+
+    @abstractmethod
+    async def get(self, run_id: UUID) -> EvalRun | None: ...
+
+    @abstractmethod
+    async def list(self, *, page: int, page_size: int) -> Page[EvalRun]: ...
+
+    @abstractmethod
+    async def get_running(self) -> EvalRun | None: ...
+
+    @abstractmethod
+    async def mark_active_failed(self, error: str) -> int: ...
+
+
+class EvalRunItemRepository(ABC):
+    @abstractmethod
+    async def add_many(self, items: Sequence[EvalRunItem]) -> None: ...
+
+    @abstractmethod
+    async def list(
+        self,
+        *,
+        run_id: UUID,
+        page: int,
+        page_size: int,
+        config_index: int | None = None,
+        item_status: EvalItemStatus | None = None,
+        relocated: bool | None = None,
+    ) -> Page[EvalRunItem]: ...

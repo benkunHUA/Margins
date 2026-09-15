@@ -9,16 +9,22 @@ from uuid import UUID
 from app.domain.entities import (
     Chunk,
     Document,
+    EvalDataset,
+    EvalRun,
+    EvalRunItem,
     Message,
     Page,
     ParseJob,
     QueryLog,
     Session,
 )
-from app.domain.enums import DocumentStatus
+from app.domain.enums import DocumentStatus, EvalItemStatus, EvalRunStatus
 from app.repositories.base import (
     ChunkRepository,
     DocumentRepository,
+    EvalDatasetRepository,
+    EvalRunItemRepository,
+    EvalRunRepository,
     ParseJobRepository,
     QueryLogRepository,
     SessionRepository,
@@ -212,6 +218,108 @@ class InMemoryQueryLogRepository(QueryLogRepository):
         if status is not None:
             items = [log for log in items if log.status == status]
         items.sort(key=lambda log: log.created_at, reverse=True)
+        total = len(items)
+        start = (page - 1) * page_size
+        return Page(
+            items=items[start : start + page_size],
+            total=total,
+            page=page,
+            page_size=page_size,
+        )
+
+
+class InMemoryEvalDatasetRepository(EvalDatasetRepository):
+    def __init__(self) -> None:
+        self._items: dict[UUID, EvalDataset] = {}
+
+    async def create(self, dataset: EvalDataset) -> EvalDataset:
+        self._items[dataset.id] = dataset
+        return dataset
+
+    async def get(self, dataset_id: UUID) -> EvalDataset | None:
+        return self._items.get(dataset_id)
+
+    async def get_by_name(self, name: str) -> EvalDataset | None:
+        return next((d for d in self._items.values() if d.name == name), None)
+
+    async def list_all(self) -> list[EvalDataset]:
+        return sorted(self._items.values(), key=lambda d: d.created_at, reverse=True)
+
+    async def delete(self, dataset_id: UUID) -> None:
+        self._items.pop(dataset_id, None)
+
+
+class InMemoryEvalRunRepository(EvalRunRepository):
+    def __init__(self) -> None:
+        self._items: dict[UUID, EvalRun] = {}
+
+    async def create(self, run: EvalRun) -> EvalRun:
+        self._items[run.id] = run
+        return run
+
+    async def update(self, run: EvalRun) -> EvalRun:
+        self._items[run.id] = run
+        return run
+
+    async def get(self, run_id: UUID) -> EvalRun | None:
+        return self._items.get(run_id)
+
+    async def list(self, *, page: int, page_size: int) -> Page[EvalRun]:
+        items = sorted(self._items.values(), key=lambda r: r.created_at, reverse=True)
+        total = len(items)
+        start = (page - 1) * page_size
+        return Page(
+            items=items[start : start + page_size],
+            total=total,
+            page=page,
+            page_size=page_size,
+        )
+
+    async def get_running(self) -> EvalRun | None:
+        return next(
+            (
+                run
+                for run in self._items.values()
+                if run.status in (EvalRunStatus.QUEUED, EvalRunStatus.RUNNING)
+            ),
+            None,
+        )
+
+    async def mark_active_failed(self, error: str) -> int:
+        count = 0
+        for run in self._items.values():
+            if run.status in (EvalRunStatus.QUEUED, EvalRunStatus.RUNNING):
+                run.status = EvalRunStatus.FAILED
+                run.error = error
+                count += 1
+        return count
+
+
+class InMemoryEvalRunItemRepository(EvalRunItemRepository):
+    def __init__(self) -> None:
+        self._items: list[EvalRunItem] = []
+
+    async def add_many(self, items: Sequence[EvalRunItem]) -> None:
+        self._items.extend(items)
+
+    async def list(
+        self,
+        *,
+        run_id: UUID,
+        page: int,
+        page_size: int,
+        config_index: int | None = None,
+        item_status: EvalItemStatus | None = None,
+        relocated: bool | None = None,
+    ) -> Page[EvalRunItem]:
+        items = [item for item in self._items if item.run_id == run_id]
+        if config_index is not None:
+            items = [item for item in items if item.config_index == config_index]
+        if item_status is not None:
+            items = [item for item in items if item.item_status == item_status]
+        if relocated is not None:
+            items = [item for item in items if item.relocated == relocated]
+        items.sort(key=lambda item: item.created_at, reverse=True)
         total = len(items)
         start = (page - 1) * page_size
         return Page(
