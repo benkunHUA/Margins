@@ -1,8 +1,9 @@
 import { NavLink, Route, Routes } from "react-router-dom";
-import { BookOpen, MessagesSquare, ScrollText } from "lucide-react";
+import { BookOpen, ClipboardCheck, MessagesSquare, ScrollText } from "lucide-react";
 
 import ChatPage from "@/pages/ChatPage";
 import DocumentsPage from "@/pages/DocumentsPage";
+import EvalPage from "@/pages/EvalPage";
 import LogsPage from "@/pages/LogsPage";
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -28,6 +29,10 @@ export default function App() {
             <ScrollText className="size-4" />
             链路日志
           </NavLink>
+          <NavLink to="/eval" className={navLinkClass}>
+            <ClipboardCheck className="size-4" />
+            评估
+          </NavLink>
         </nav>
       </aside>
       <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
@@ -35,6 +40,7 @@ export default function App() {
           <Route path="/" element={<DocumentsPage />} />
           <Route path="/chat" element={<ChatPage />} />
           <Route path="/logs" element={<LogsPage />} />
+          <Route path="/eval" element={<EvalPage />} />
         </Routes>
       </main>
     </div>
