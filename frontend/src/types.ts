@@ -134,3 +134,64 @@ export interface QueryLogDetailItem {
   citations: Citation[];
   created_at: string;
 }
+
+export type EvalMode = "retrieval" | "full";
+export type EvalRunStatus = "queued" | "running" | "succeeded" | "failed";
+export type EvalItemStatus = "hit" | "miss" | "invalid" | "no_answer" | "error";
+
+export interface EvalRunConfig {
+  recall_k: number;
+  rerank_top_n: number;
+  relevance_threshold: number;
+  rewrite_enabled: boolean;
+  rerank_model: string | null;
+}
+
+export interface EvalDatasetSummary {
+  id: string;
+  name: string;
+  description: string;
+  item_count: number;
+  category_counts: Record<string, number>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EvalRunSummary {
+  id: string;
+  dataset_id: string;
+  mode: EvalMode;
+  status: EvalRunStatus;
+  configs: EvalRunConfig[];
+  progress_done: number;
+  progress_total: number;
+  metrics: Record<string, Record<string, number>>;
+  error: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export interface EvalRetrievedRow {
+  rank: number;
+  chunk_id: string;
+  doc_title?: string | null;
+  score?: number;
+}
+
+export interface EvalRunItem {
+  id: string;
+  config_index: number;
+  question_id: string;
+  category: string;
+  item_status: EvalItemStatus;
+  resolution_source: "chunk_id" | "snippet" | "keywords" | "invalid";
+  relocated: boolean;
+  error: string | null;
+  best_rank: number | null;
+  recall: Record<string, boolean | number>;
+  ndcg: number | null;
+  retrieved: EvalRetrievedRow[];
+  gold_matched: string[];
+  citations: Citation[];
+}
