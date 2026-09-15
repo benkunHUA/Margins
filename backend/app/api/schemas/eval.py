@@ -64,6 +64,6 @@ class RunItemOut(BaseModel):
     recall: dict
     ndcg: float | None = None
     retrieved: list[dict]
-    gold_matched: list[str]
+    gold_matched: list[dict]
     citations: list
     diagnostics: dict
