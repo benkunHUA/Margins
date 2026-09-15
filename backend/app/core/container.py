@@ -8,6 +8,9 @@ from app.core.config import Settings
 from app.repositories.memory.memory_repos import (
     InMemoryChunkRepository,
     InMemoryDocumentRepository,
+    InMemoryEvalDatasetRepository,
+    InMemoryEvalRunItemRepository,
+    InMemoryEvalRunRepository,
     InMemoryParseJobRepository,
     InMemoryQueryLogRepository,
     InMemorySessionRepository,
@@ -15,12 +18,19 @@ from app.repositories.memory.memory_repos import (
 from app.repositories.sql.chunks import ChunkSqlRepository
 from app.repositories.sql.database import create_engine_and_sessionmaker, run_migrations
 from app.repositories.sql.documents import DocumentSqlRepository
+from app.repositories.sql.eval import (
+    EvalDatasetSqlRepository,
+    EvalRunItemSqlRepository,
+    EvalRunSqlRepository,
+)
 from app.repositories.sql.query_logs import QueryLogSqlRepository
 from app.repositories.sql.sessions import ParseJobSqlRepository, SessionSqlRepository
 from app.services.chat_service import ChatService
 from app.services.chunking import Chunker, MarkdownChunker
 from app.services.document_service import DocumentService
 from app.services.embedding import DashScopeEmbeddingService, EmbeddingService
+from app.services.eval.runner import EvalRunner
+from app.services.eval.service import EvalService
 from app.services.image_summarizer import DashScopeImageSummarizer, ImageSummarizer
 from app.services.indexing import IndexingPipeline
 from app.services.llm import LangChainLLMClient, LLMClient
@@ -71,12 +81,18 @@ class ServiceContainer:
             self.jobs = ParseJobSqlRepository(session_factory)
             self.sessions = SessionSqlRepository(session_factory)
             self.query_logs = QueryLogSqlRepository(session_factory)
+            self.eval_datasets = EvalDatasetSqlRepository(session_factory)
+            self.eval_runs = EvalRunSqlRepository(session_factory)
+            self.eval_items = EvalRunItemSqlRepository(session_factory)
         else:
             self.documents = InMemoryDocumentRepository()
             self.chunks = InMemoryChunkRepository()
             self.jobs = InMemoryParseJobRepository()
             self.sessions = InMemorySessionRepository()
             self.query_logs = InMemoryQueryLogRepository()
+            self.eval_datasets = InMemoryEvalDatasetRepository()
+            self.eval_runs = InMemoryEvalRunRepository()
+            self.eval_items = InMemoryEvalRunItemRepository()
 
         self.parse_queue: asyncio.Queue[UUID] = asyncio.Queue()
         self.parser = parser or MineruOnlineParser(settings.parser)
@@ -96,6 +112,23 @@ class ServiceContainer:
             settings.image_summary
         )
         self.fusion = RRFFusion()
+        self.eval_service = EvalService(
+            self.eval_datasets, self.eval_runs, self.eval_items
+        )
+        self.eval_runner = EvalRunner(
+            datasets=self.eval_datasets,
+            runs=self.eval_runs,
+            items=self.eval_items,
+            documents=self.documents,
+            chunks=self.chunks,
+            embeddings=self.embedding,
+            vector=self.vector,
+            sparse=self.sparse,
+            fusion=self.fusion,
+            reranker=self.reranker,
+            llm_client=self.llm_client,
+            settings=settings,
+        )
         self.rewriter = LLMQueryRewriter(self.llm_client, settings.rewrite)
         self.hybrid = HybridRetriever(
             self.vector, self.sparse, self.embedding, self.fusion, settings.retrieval
@@ -153,6 +186,7 @@ class ServiceContainer:
         storage.parsed_dir.mkdir(parents=True, exist_ok=True)
         if self._engine is not None:
             await asyncio.to_thread(run_migrations, storage.data_dir)
+        await self.eval_service.mark_stale_failed()
         await self.vector.load()
         rows = await self.chunks.list_all()
         if await self.chunks.allocate_missing_ids():
@@ -173,6 +207,7 @@ class ServiceContainer:
         logger.info("容器启动完成", extra={"extra_fields": {"data_dir": str(storage.data_dir)}})
 
     async def shutdown(self) -> None:
+        await self.eval_runner.shutdown()
         if self._worker_task is not None:
             self._worker_task.cancel()
             try:
