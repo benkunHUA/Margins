@@ -1,6 +1,5 @@
 """RAG 管线编排（事件流）。"""
 
-import re
 import time
 from collections.abc import AsyncIterator, Sequence
 
@@ -17,14 +16,16 @@ from app.domain.events import (
 from app.services.llm import ChatMessage, LLMClient
 from app.services.rag.context_builder import ContextBuilder
 from app.services.rag.hybrid_retriever import HybridRetriever
+from app.services.rag.postprocess import (
+    cap_per_document,
+    filter_citations,
+    merge_candidates,
+)
 from app.services.rag.query_rewriter import QueryRewriter
 from app.services.rag.trace import Trace
 from app.services.reranking import Reranker
-from app.vector.base import ScoredChunk
 
 logger = get_logger(__name__)
-
-CITATION_MARKER = re.compile(r"[\[【]\s*(?:引用|参考|文献)?\s*(\d{1,2})\s*[\]】]")
 
 
 class RAGPipeline:
@@ -60,17 +61,13 @@ class RAGPipeline:
                 queries = await self._rewriter.rewrite(question, history)
             rewrite_ms = round((time.perf_counter() - t0) * 1000, 1)
             t0 = time.perf_counter()
-            merged: dict[str, ScoredChunk] = {}
+            result_lists = []
             for query in queries:
                 if trace is not None:
-                    items = await self._hybrid.retrieve(query, trace=trace)
+                    result_lists.append(await self._hybrid.retrieve(query, trace=trace))
                 else:
-                    items = await self._hybrid.retrieve(query)
-                for item in items:
-                    key = str(item.chunk.id)
-                    if key not in merged or item.score > merged[key].score:
-                        merged[key] = item
-            candidates = list(merged.values())
+                    result_lists.append(await self._hybrid.retrieve(query))
+            candidates = merge_candidates(result_lists)
             retrieve_ms = round((time.perf_counter() - t0) * 1000, 1)
             t0 = time.perf_counter()
             reranked = await self._reranker.rerank(
@@ -102,7 +99,7 @@ class RAGPipeline:
                         ],
                     },
                 )
-            capped = self._cap_per_document(reranked, self._config.max_chunks_per_document)
+            capped = cap_per_document(reranked, self._config.max_chunks_per_document)
             capped = [
                 item
                 for item in capped
@@ -175,7 +172,7 @@ class RAGPipeline:
                         "output_tokens_estimate": len(answer) // 2,
                     },
                 )
-            citations = self._filter_citations(
+            citations = filter_citations(
                 bundle.citations,
                 answer,
                 self._config.max_citations,
@@ -207,30 +204,3 @@ class RAGPipeline:
             yield ErrorEvent(code="RAG_ERROR", message=str(exc))
             return
         yield DoneEvent(message_id="")
-
-    @staticmethod
-    def _filter_citations(citations, answer: str, cap: int) -> list:
-        """只保留回答中实际引用的 [n]，按首次出现顺序去重并截断。"""
-        picked: list[int] = []
-        for marker in CITATION_MARKER.findall(answer):
-            index = int(marker)
-            if 1 <= index <= len(citations) and index - 1 not in picked:
-                picked.append(index - 1)
-                if len(picked) >= cap:
-                    break
-        return [citations[i] for i in picked]
-
-    @staticmethod
-    def _cap_per_document(
-        items: Sequence[ScoredChunk],
-        cap: int,
-    ) -> list[ScoredChunk]:
-        counts: dict[str, int] = {}
-        result: list[ScoredChunk] = []
-        for item in items:
-            key = str(item.chunk.document_id)
-            if counts.get(key, 0) >= cap:
-                continue
-            counts[key] = counts.get(key, 0) + 1
-            result.append(item)
-        return result

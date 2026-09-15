@@ -11,6 +11,7 @@ from app.services.llm import ChatMessage, LLMClient
 from app.services.rag.context_builder import ContextBuilder
 from app.services.rag.hybrid_retriever import HybridRetriever
 from app.services.rag.pipeline import RAGPipeline
+from app.services.rag.postprocess import cap_per_document
 from app.vector.base import ScoredChunk, VectorRepository
 from app.vector.fusion import RRFFusion
 
@@ -190,7 +191,7 @@ def test_cap_per_document_limits_each_document() -> None:
     items[0].chunk.document_id = doc_a
     items[1].chunk.document_id = doc_a
     items[2].chunk.document_id = doc_b
-    result = RAGPipeline._cap_per_document(items, cap=1)
+    result = cap_per_document(items, cap=1)
     assert len(result) == 2
     assert {str(item.chunk.document_id) for item in result} == {str(doc_a), str(doc_b)}
 
