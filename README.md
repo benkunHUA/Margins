@@ -1,6 +1,6 @@
 # Margins 知识库系统
 
-基于 **上传文档 → RAG 问答** 的本地/小团队知识库系统。前端 React，后端 FastAPI + LangChain 1.x，文档解析走 MinerU 在线服务，向量检索用 Faiss，检索管线包含查询重写、混合检索（Faiss + BM25 + RRF）与重排序（百炼 qwen3-rerank）。
+基于 **上传文档 → RAG 问答** 的本地/小团队知识库系统。前端 React，后端 FastAPI + LangChain 1.x，文档解析走 MinerU 在线服务，检索索引用 SQLite 单库（FTS5 全文 + sqlite-vec 向量），检索管线包含查询重写、混合检索（向量 + 关键词 + RRF）与重排序（百炼 qwen3-rerank）。
 
 ## 功能特性（MVP）
 
@@ -19,24 +19,27 @@
 | LLM | LangChain 1.x + `langchain-openai`（OpenAI 兼容接口，默认 DeepSeek） |
 | Embedding | 阿里云百炼 `text-embedding-v4` |
 | Rerank | 阿里云百炼 `qwen3-rerank`（备选 `gte-rerank-v2`） |
-| 文档解析 | MinerU 在线解析服务（`mineru-open-sdk`） |
-| 向量库 | Faiss（本地落盘持久化） |
-| 元数据存储 | SQLite（SQLAlchemy 2.0 async，预留 PostgreSQL 升级位） |
+| 文档解析 | MinerU 在线解析服务（`mineru-open-sdk`）+ 本地纯文本提取 |
+| 检索索引 | SQLite 单库：FTS5 全文（jieba 词典词 + 中文二元组）+ sqlite-vec 向量（vec0, cosine） |
+| 元数据存储 | SQLite（SQLAlchemy 2.0 async，与索引表同库，预留 PostgreSQL 升级位） |
 
 ## 快速开始
 
 ### 方式一：本地开发
 
-后端（需要 Python 3.12）：
+后端（需要支持 SQLite 扩展加载的 Python 3.12，由 uv 管理）：
 
 ```bash
 cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
+uv python pin 3.12                              # 仓库根目录固定解释器版本
+uv sync --extra dev --python-preference only-managed
 cp .env.example .env   # 填入 DASHSCOPE_API_KEY、MINERU_API_TOKEN、LLM_API_KEY
-uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:app --reload --port 8000
 ```
+
+> `sqlite-vec` 依赖 SQLite 扩展加载能力：macOS 系统自带的 Python 未开启该能力，
+> 因此**必须用 uv 管理的 CPython**（`uv sync --python-preference only-managed`），
+> 否则启动时会报 `enable_load_extension` / `no such module: vec0`。
 
 前端：
 
@@ -70,7 +73,9 @@ docker compose up --build
 | `RERANK_MODEL` | 默认 `qwen3-rerank` |
 | `MINERU_API_TOKEN` | MinerU 在线解析 Token（[获取](https://mineru.net/apiManage/token)） |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | OpenAI 兼容 LLM 配置，默认 DeepSeek |
-| `DATA_DIR` | 数据目录（SQLite、Faiss 索引、上传文件） |
+| `DATA_DIR` | 数据目录（SQLite 业务库与索引、上传文件、解析结果） |
+| `INDEX_BACKEND` | 索引后端，默认 `sqlite`（FTS5 + sqlite-vec 同库） |
+| `FTS_TOKENIZER` | 稀疏检索分词器，默认 `jieba` |
 | `IMAGE_SUMMARY_*` | 图片文字总结配置（开关 / qwen3.8-max 模型 / 数量上限 / 大小阈值 / 温度 / 思考模式），见 [.env.example](.env.example) |
 
 检索参数（`RECALL_K`、`RERANK_TOP_N`、`RELEVANCE_THRESHOLD`、`MAX_CHUNKS_PER_DOCUMENT`、`MIN_CHUNK_CHARS`、`MAX_CITATIONS` 等）见 [.env.example](.env.example)。
@@ -84,7 +89,27 @@ docker compose up --build
 
 - 前端：http://localhost:3000（nginx 托管，`/api` 反向代理到后端）
 - 后端：http://localhost:8000，健康检查 `GET /api/health` 返回 `{"status":"ok","version":"...","documents":N}`
-- 数据持久化在 `./data`（SQLite、Faiss 索引、上传文件、解析结果）
+- 数据持久化在 `./data`（SQLite 业务库与索引、上传文件、解析结果）
+
+## 索引架构（v0.6 起）
+
+检索索引不再使用 Faiss 文件 + 内存 BM25，而是**同一个 `margins.db` 承载全部索引**：
+
+| 表 | 作用 |
+|---|---|
+| `chunks` | chunk 原文与元数据，`idx_id` 为索引键 |
+| `chunk_fts` | FTS5 倒排索引，rowid = `idx_id`；写入与查询统一分词 |
+| `chunk_vectors` | sqlite-vec 向量表（vec0，cosine），rowid = `idx_id`，`document_id` 为过滤列 |
+| `index_seq` | `idx_id` 单调分配器 |
+
+好处：写入是**单个 SQLite 事务**（元数据、全文、向量要么全写要么全不写）、
+删除与重解析即时生效（不再启动全量重建）、按文档过滤直接下推成 SQL（`@ 文档提问` 的基础）、
+换后端只需实现 `IndexBackendPort`（`DenseIndexPort` / `SparseIndexPort` 能力接口）。
+
+> **升级说明（不迁移旧索引）**：本次升级会重建 `chunks` 表并删除 `faiss_seq`，
+> 旧 `faiss_id` / `data/faiss_index/*` 不再使用。升级后请删除 `backend/data`
+> （或至少 `data/faiss_index` 与旧 chunks 数据）后重新上传文档。
+> 若改了 `EMBEDDING_DIMENSION`，`chunk_vectors` 维度不一致会直接报错，同样需要清空重建。
 - 后端容器带 healthcheck，前端等后端健康后才启动；SSE 流式已关闭 nginx 缓冲
 
 ## 数据库迁移（Alembic）
@@ -107,7 +132,7 @@ alembic upgrade head                       # 应用迁移
 │   │   ├── domain/           # 领域实体与事件
 │   │   ├── api/              # 路由与请求/响应模型
 │   │   ├── repositories/     # 仓储接口 + SQL/内存实现
-│   │   ├── vector/           # Faiss 向量库、BM25、RRF 融合
+│   │   ├── index/            # 索引端口（Dense/Sparse/Backend）、SQLite 后端、写入器、RRF 融合
 │   │   ├── services/         # 解析、索引、检索、问答服务
 │   │   └── workers/          # 异步解析任务
 │   └── tests/

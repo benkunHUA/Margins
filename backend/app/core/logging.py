@@ -27,6 +27,8 @@ def setup_logging(level: str = "INFO") -> None:
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(level.upper())
+    # 第三方库噪声：jieba 首次加载词典会打一堆 DEBUG 行
+    logging.getLogger("jieba").setLevel(logging.WARNING)
 
 
 def get_logger(name: str) -> logging.Logger:

@@ -113,6 +113,27 @@ async def test_chinese_two_char_query_hits_via_jieba(backend) -> None:
     await backend.close()
 
 
+async def test_sparse_recalls_long_question_with_or_semantics(backend) -> None:
+    """长句式问题（改写后的典型形态）必须能召回，而不是因为 AND 语义 0 命中。"""
+    await backend.initialize()
+    doc_id = uuid4()
+    await backend.apply(
+        IndexChangeSet(
+            upserts=[
+                _record(
+                    doc_id,
+                    "截至 2026 年 8 月 31 日，公司累计回购股份 707,939 股；"
+                    "回购方案实施期限为 2026 年 4 月 1 日至 2027 年 3 月 29 日。",
+                    [1.0, 0.0, 0.0, 0.0],
+                )
+            ]
+        )
+    )
+    hits = await backend.sparse.search("公司回购方案实施期限和累计回购股数是多少", 5)
+    assert hits and hits[0].chunk.document_id == doc_id
+    await backend.close()
+
+
 async def test_initialize_reports_dimension_mismatch(tmp_path) -> None:
     run_migrations(tmp_path)
     db_path = tmp_path / "margins.db"

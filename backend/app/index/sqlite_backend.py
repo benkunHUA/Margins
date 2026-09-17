@@ -8,6 +8,9 @@
   embedding 已在事务外算好；任一步失败整体回滚，不会出现"元数据有、索引没有"。
 - **索引级过滤**：`RetrievalScope.document_ids` 下推成 SQL `IN (...)` 条件，
   不把全量数据取回内存再筛。
+- **向量列不设 partition key**：`document_id` 只做普通元数据列。实测 vec0 的
+  partition key 在按文档过滤时很快，但**全库 KNN 要遍历所有分区**（1000 个文档
+  时 1000 行就要 ~0.5s），而全库检索才是默认路径，因此用普通列 + SQL 过滤。
 - **同步 sqlite3 + to_thread**：sqlite3 是阻塞 API，用 `asyncio.Lock` 串行化
   写与查询，避免多线程复用同一连接时的竞态。
 - **向量维度**：`chunk_vectors` 由本模块按运行时配置创建（vec0 无法改维度），
@@ -45,10 +48,12 @@ _ALLOCATE = (
 )
 _VEC_DDL = (
     "CREATE VIRTUAL TABLE IF NOT EXISTS chunk_vectors USING vec0("
-    "embedding float[{dim}] distance_metric=cosine, document_id text partition key)"
+    "embedding float[{dim}] distance_metric=cosine, document_id text)"
 )
 _DIM_RE = re.compile(r"float\s*\[\s*(\d+)\s*\]")
 _CJK_RUN_RE = re.compile(r"[\u4e00-\u9fff]+")
+# 查询串最多使用的 token 数：防止超长查询拼出巨大的 FTS5 表达式
+MAX_QUERY_TOKENS = 64
 
 _VECTOR_SQL = """
 SELECT c.idx_id, chunk_vectors.distance, c.id, c.document_id, c.chunk_index,
@@ -96,8 +101,17 @@ def _tokenize(text: str) -> list[str]:
 
 
 def _to_match_query(text: str) -> str:
-    """把查询切成 FTS5 短语串：每个 token 加双引号并转义内部引号。"""
-    return " ".join(f'"{token.replace(chr(34), chr(34) * 2)}"' for token in _tokenize(text))
+    """把查询切成 FTS5 表达式：每个 token 加引号，token 之间是 OR。
+
+    用 OR 而不是空格（FTS5 里空格是 AND）：关键词路要的是经典 BM25 语义
+    —— 命中任意词即召回、按 bm25 排序。AND 语义下"改写后的长句式问题"
+    几乎必然 0 命中（例："回购方案实施期限和累计回购股数是多少"要求 chunk
+    同时包含"股数"等所有词），稀疏路就白设了。精度由 RRF 与重排兜底。
+    """
+    tokens = _tokenize(text)[:MAX_QUERY_TOKENS]
+    if not tokens:
+        return ""
+    return " OR ".join(f'"{token.replace(chr(34), chr(34) * 2)}"' for token in tokens)
 
 
 def _normalize(vector: Sequence[float]) -> list[float]:
@@ -144,6 +158,8 @@ class SqliteIndexBackend(IndexBackendPort):
 
     # ----- 生命周期 -----
     async def initialize(self) -> None:
+        # 预热 jieba 词典：否则首次入库/检索会额外花 ~0.6s 加载词典
+        await asyncio.to_thread(jieba.initialize)
         self._conn = await asyncio.to_thread(self._open)
         await asyncio.to_thread(self._ensure_vector_table)
 
