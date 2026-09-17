@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "margins-backend"
 version = "0.1.0"
-description = "Margins 知识库系统后端（FastAPI + LangChain 1.x + Faiss + MinerU + 百炼）"
+description = "Margins 知识库系统后端（FastAPI + LangChain 1.x + SQLite 索引 + MinerU + 百炼）"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115",
@@ -21,7 +21,8 @@ dependencies = [
   "langchain-core>=1.0,<2",
   "langchain-openai>=1.0,<2",
   "langchain-text-splitters>=1.0,<2",
-  "faiss-cpu>=1.9",
+  "sqlite-vec>=0.1.9",
+  "jieba>=0.42.1",
   "dashscope>=1.20",
   "mineru-open-sdk>=0.2",
   "pypdf>=5",

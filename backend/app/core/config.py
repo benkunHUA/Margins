@@ -83,6 +83,18 @@ class ImageSummaryConfig(BaseModel):
     max_tokens: int = 800
 
 
+class IndexConfig(BaseModel):
+    """检索索引配置：后端类型与稀疏检索分词器。
+
+    后端由 `app/index/factory.py` 按 `backend` 组装；本期仅实现 `sqlite`
+    （FTS5 倒排 + sqlite-vec 向量同库）。`tokenizer` 当前仅 `jieba`，
+    写入与查询必须使用同一分词规则，否则召回会静默变差。
+    """
+
+    backend: str = "sqlite"
+    tokenizer: str = "jieba"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -130,6 +142,10 @@ class Settings(BaseSettings):
     # ----- 任务队列 -----
     queue_concurrency: int = Field(2, validation_alias="QUEUE__CONCURRENCY")
     queue_max_retries: int = Field(3, validation_alias="QUEUE__MAX_RETRIES")
+
+    # ----- 索引后端 -----
+    index_backend: str = Field("sqlite", validation_alias="INDEX_BACKEND")
+    fts_tokenizer: str = Field("jieba", validation_alias="FTS_TOKENIZER")
 
     # ----- 日志 -----
     log_level: str = Field("INFO", validation_alias="LOG_LEVEL")
@@ -196,4 +212,11 @@ class Settings(BaseSettings):
             min_bytes=self.image_summary_min_bytes,
             temperature=self.image_summary_temperature,
             thinking=self.image_summary_thinking,
+        )
+
+    @property
+    def index(self) -> IndexConfig:
+        return IndexConfig(
+            backend=self.index_backend,
+            tokenizer=self.fts_tokenizer,
         )
