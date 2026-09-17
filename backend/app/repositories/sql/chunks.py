@@ -14,12 +14,13 @@ from app.domain.entities import Chunk
 from app.repositories.base import ChunkRepository
 from app.repositories.sql.models import ChunkRow
 
+# 索引键分配器：与 `SqliteIndexBackend` 共用同一张 `index_seq` 表
 _ALLOCATE = text(
-    "UPDATE faiss_seq SET next_id = next_id + :n "
+    "UPDATE index_seq SET next_id = next_id + :n "
     "WHERE id = 1 RETURNING next_id - :n AS start"
 )
 _ENSURE_SEQ = text(
-    "INSERT INTO faiss_seq (id, next_id) VALUES (1, 0) "
+    "INSERT INTO index_seq (id, next_id) VALUES (1, 0) "
     "ON CONFLICT(id) DO NOTHING"
 )
 
@@ -30,7 +31,7 @@ def _row(chunk: Chunk) -> ChunkRow:
         document_id=str(chunk.document_id),
         chunk_index=chunk.chunk_index,
         content=chunk.content,
-        faiss_id=chunk.faiss_id,
+        idx_id=chunk.idx_id,
         heading_path=chunk.heading_path,
         page=chunk.page,
         token_count=chunk.token_count,
@@ -45,7 +46,7 @@ def _entity(row: ChunkRow) -> Chunk:
         document_id=UUID(row.document_id),
         chunk_index=row.chunk_index,
         content=row.content,
-        faiss_id=row.faiss_id,
+        idx_id=row.idx_id,
         heading_path=row.heading_path,
         page=row.page,
         token_count=row.token_count,
@@ -59,14 +60,14 @@ class ChunkSqlRepository(ChunkRepository):
 
     async def add_many(self, chunks: Sequence[Chunk]) -> None:
         async with self._sf() as session:
-            pending = [chunk for chunk in chunks if chunk.faiss_id is None]
+            pending = [chunk for chunk in chunks if chunk.idx_id is None]
             if pending:
                 await session.execute(_ENSURE_SEQ)
                 start = (
                     await session.execute(_ALLOCATE, {"n": len(pending)})
                 ).scalar_one()
                 for offset, chunk in enumerate(pending):
-                    chunk.faiss_id = start + offset
+                    chunk.idx_id = start + offset
             session.add_all([_row(chunk) for chunk in chunks])
             await session.commit()
 
@@ -101,36 +102,3 @@ class ChunkSqlRepository(ChunkRepository):
                 )
             ).scalars().all()
             return [_entity(row) for row in rows]
-
-    async def get_by_faiss_ids(self, faiss_ids: Sequence[int]) -> list[Chunk]:
-        if not faiss_ids:
-            return []
-        async with self._sf() as session:
-            rows = (
-                await session.execute(
-                    select(ChunkRow)
-                    .where(ChunkRow.faiss_id.in_(list(faiss_ids)))
-                    .order_by(ChunkRow.chunk_index)
-                )
-            ).scalars().all()
-            return [_entity(row) for row in rows]
-
-    async def allocate_missing_ids(self) -> int:
-        async with self._sf() as session:
-            rows = (
-                await session.execute(
-                    select(ChunkRow)
-                    .where(ChunkRow.faiss_id.is_(None))
-                    .order_by(ChunkRow.id)
-                )
-            ).scalars().all()
-            if not rows:
-                return 0
-            await session.execute(_ENSURE_SEQ)
-            start = (
-                await session.execute(_ALLOCATE, {"n": len(rows)})
-            ).scalar_one()
-            for offset, row in enumerate(rows):
-                row.faiss_id = start + offset
-            await session.commit()
-            return len(rows)

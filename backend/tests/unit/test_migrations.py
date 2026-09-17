@@ -43,18 +43,19 @@ def test_migration_0003_adds_parse_mode_column(tmp_path) -> None:
     engine.dispose()
 
 
-def test_migration_0004_adds_faiss_id_and_seq(tmp_path) -> None:
+def test_migration_0007_replaces_faiss_with_sqlite_index(tmp_path) -> None:
+    """0007 之后：chunks 用 idx_id，faiss_seq 消失，FTS5 与分配器就位且数据清空。"""
     run_migrations(tmp_path)
     engine = create_engine(f"sqlite:///{tmp_path / 'margins.db'}")
     chunk_cols = {c["name"] for c in inspect(engine).get_columns("chunks")}
-    assert "faiss_id" in chunk_cols
+    assert "idx_id" in chunk_cols
+    assert "faiss_id" not in chunk_cols
     tables = set(inspect(engine).get_table_names())
-    assert "faiss_seq" in tables
+    assert "faiss_seq" not in tables
+    assert {"chunk_fts", "index_seq"} <= tables
     with engine.connect() as conn:
-        value = conn.execute(
-            sa.text("SELECT next_id FROM faiss_seq WHERE id=1")
-        ).scalar_one()
-        assert value == 0
+        assert conn.execute(sa.text("SELECT next_id FROM index_seq WHERE id=1")).scalar_one() == 0
+        assert conn.execute(sa.text("SELECT count(*) FROM chunks")).scalar_one() == 0
     engine.dispose()
 
 

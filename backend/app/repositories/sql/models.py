@@ -36,7 +36,8 @@ class ChunkRow(Base):
     )
     chunk_index: Mapped[int] = mapped_column(Integer)
     content: Mapped[str] = mapped_column(Text)
-    faiss_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 索引键：chunk_fts.rowid 与 chunk_vectors.rowid 都用它（由 index_seq 分配）
+    idx_id: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
     heading_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     page: Mapped[int | None] = mapped_column(Integer, nullable=True)
     token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -95,8 +96,10 @@ class QueryLogRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
 
-class FaissSeqRow(Base):
-    __tablename__ = "faiss_seq"
+class IndexSeqRow(Base):
+    """索引键分配器：单行表，next_id 单调递增。"""
+
+    __tablename__ = "index_seq"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     next_id: Mapped[int] = mapped_column(Integer, default=0)

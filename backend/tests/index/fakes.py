@@ -43,17 +43,17 @@ def _to_chunk(record: IndexRecord) -> Chunk:
 
 
 class _MemoryDense(DenseIndexPort):
-    def __init__(self, records: dict[UUID, IndexRecord]) -> None:
-        self.records = records
+    def __init__(self, backend: "InMemoryIndexBackend") -> None:
+        self._backend = backend
 
     async def upsert(self, records: Sequence[IndexRecord]) -> None:
-        return None
+        await self._backend.apply(IndexChangeSet(upserts=list(records)))
 
     async def delete(self, chunk_ids: Sequence[UUID]) -> None:
-        return None
+        await self._backend.apply(IndexChangeSet(delete_chunk_ids=list(chunk_ids)))
 
     async def delete_by_document(self, document_id: UUID) -> None:
-        return None
+        await self._backend.apply(IndexChangeSet(delete_documents=[document_id]))
 
     async def search(
         self,
@@ -63,7 +63,7 @@ class _MemoryDense(DenseIndexPort):
     ) -> list[ScoredChunk]:
         items = [
             ScoredChunk(chunk=_to_chunk(record), score=_cosine(embedding, record.embedding))
-            for record in self.records.values()
+            for record in self._backend.records.values()
             if _in_scope(record, scope)
         ]
         items.sort(key=lambda item: item.score, reverse=True)
@@ -71,17 +71,17 @@ class _MemoryDense(DenseIndexPort):
 
 
 class _MemorySparse(SparseIndexPort):
-    def __init__(self, records: dict[UUID, IndexRecord]) -> None:
-        self.records = records
+    def __init__(self, backend: "InMemoryIndexBackend") -> None:
+        self._backend = backend
 
     async def upsert(self, records: Sequence[IndexRecord]) -> None:
-        return None
+        await self._backend.apply(IndexChangeSet(upserts=list(records)))
 
     async def delete(self, chunk_ids: Sequence[UUID]) -> None:
-        return None
+        await self._backend.apply(IndexChangeSet(delete_chunk_ids=list(chunk_ids)))
 
     async def delete_by_document(self, document_id: UUID) -> None:
-        return None
+        await self._backend.apply(IndexChangeSet(delete_documents=[document_id]))
 
     async def search(
         self,
@@ -91,7 +91,7 @@ class _MemorySparse(SparseIndexPort):
     ) -> list[ScoredChunk]:
         tokens = [token for token in query.split() if token]
         items: list[ScoredChunk] = []
-        for record in self.records.values():
+        for record in self._backend.records.values():
             if not _in_scope(record, scope):
                 continue
             score = sum(1 for token in tokens if token in record.content)
@@ -106,8 +106,8 @@ class InMemoryIndexBackend(IndexBackendPort):
 
     def __init__(self) -> None:
         self.records: dict[UUID, IndexRecord] = {}
-        self.dense = _MemoryDense(self.records)
-        self.sparse = _MemorySparse(self.records)
+        self.dense = _MemoryDense(self)
+        self.sparse = _MemorySparse(self)
 
     async def initialize(self) -> None:
         return None

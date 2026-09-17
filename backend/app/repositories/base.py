@@ -67,12 +67,6 @@ class ChunkRepository(ABC):
     @abstractmethod
     async def get_many(self, chunk_ids: Sequence[UUID]) -> list[Chunk]: ...
 
-    async def get_by_faiss_ids(self, faiss_ids: Sequence[int]) -> list[Chunk]:
-        raise NotImplementedError
-
-    async def allocate_missing_ids(self) -> int:
-        return 0
-
 
 class SessionRepository(ABC):
     @abstractmethod

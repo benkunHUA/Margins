@@ -79,13 +79,17 @@ class Document(BaseModel):
 
 
 class Chunk(BaseModel):
-    """检索最小单元；id 为业务主键，faiss_id 为向量索引 id。"""
+    """检索最小单元；id 为业务主键，idx_id 为索引键。
+
+    `idx_id` 是同库三张索引表的连接键：它同时是 `chunk_fts` 的 rowid
+    与 `chunk_vectors` 的 rowid，由 `index_seq` 单调分配（写入索引时才分配）。
+    """
 
     id: UUID = Field(default_factory=uuid4)
     document_id: UUID
     chunk_index: int
     content: str
-    faiss_id: int | None = None
+    idx_id: int | None = None
     heading_path: str | None = None
     page: int | None = None
     token_count: int | None = None
