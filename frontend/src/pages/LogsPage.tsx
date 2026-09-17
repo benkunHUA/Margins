@@ -27,7 +27,8 @@ export default function LogsPage() {
   });
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 px-8 py-8">
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto max-w-6xl space-y-6 px-8 py-8">
       <header>
         <h2 className="text-2xl font-semibold tracking-tight">链路日志</h2>
         <p className="mt-1 text-sm text-slate-500">
@@ -93,7 +94,8 @@ export default function LogsPage() {
         onPageChange={setPage}
         onOpenDetail={setSelectedId}
       />
-      <LogDetailDrawer logId={selectedId} onClose={() => setSelectedId(null)} />
+        <LogDetailDrawer logId={selectedId} onClose={() => setSelectedId(null)} />
+      </div>
     </div>
   );
 }

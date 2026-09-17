@@ -46,7 +46,7 @@ export default function ChatPage() {
   }, [sessionId, setMessages]);
 
   return (
-    <div className="mx-auto flex h-full max-w-6xl flex-col px-8 py-8">
+    <div className="mx-auto flex h-full min-h-0 max-w-6xl flex-col px-8 py-8">
       <header className="mb-6 flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">知识问答</h2>

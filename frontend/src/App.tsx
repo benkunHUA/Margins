@@ -35,7 +35,7 @@ export default function App() {
           </NavLink>
         </nav>
       </aside>
-      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
+      <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
         <Routes>
           <Route path="/" element={<DocumentsPage />} />
           <Route path="/chat" element={<ChatPage />} />

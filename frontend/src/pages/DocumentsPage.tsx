@@ -25,7 +25,8 @@ export default function DocumentsPage() {
   const setKeyword = useDocumentStore((state) => state.setKeyword);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 px-8 py-8">
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto max-w-6xl space-y-6 px-8 py-8">
       <header>
         <h2 className="text-2xl font-semibold tracking-tight">文档管理</h2>
         <p className="mt-1 text-sm text-slate-500">
@@ -101,7 +102,8 @@ export default function DocumentsPage() {
         onPageChange={setPage}
         onOpenDetail={setSelectedId}
       />
-      <DocumentDrawer documentId={selectedId} onClose={() => setSelectedId(null)} />
+        <DocumentDrawer documentId={selectedId} onClose={() => setSelectedId(null)} />
+      </div>
     </div>
   );
 }

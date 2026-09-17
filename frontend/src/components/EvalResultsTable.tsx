@@ -90,6 +90,7 @@ function ItemsPanel({ runId, configIndex }: { runId: string; configIndex: number
         <span className="ml-auto text-slate-400">共 {data.total} 题</span>
       </div>
       <div className="space-y-1">
+        <div className="max-h-[420px] space-y-1 overflow-y-auto pr-1">
         {data.items.map((item) => (
           <details key={item.id} className="rounded-lg border border-slate-200 bg-white">
             <summary className="flex cursor-pointer items-center gap-3 px-3 py-2 text-xs">
@@ -205,6 +206,7 @@ function ItemsPanel({ runId, configIndex }: { runId: string; configIndex: number
             </div>
           </details>
         ))}
+        </div>
       </div>
     </div>
   );

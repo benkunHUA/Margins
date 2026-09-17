@@ -45,7 +45,8 @@ export default function EvalPage() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5 px-8 py-8">
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto max-w-6xl space-y-5 px-8 py-8">
       <header>
         <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
           <ClipboardCheck className="size-5 text-slate-400" />
@@ -203,7 +204,8 @@ export default function EvalPage() {
             <p className="px-4 py-6 text-center text-xs text-slate-400">暂无评估记录</p>
           )}
         </div>
-      </section>
+        </section>
+      </div>
     </div>
   );
 }
