@@ -1,12 +1,12 @@
 """RRF（Reciprocal Rank Fusion）融合组件。
 
-纯函数、无 IO，权重与去重逻辑可单测。
+纯函数、无 IO：按各路召回的排名位置融合，同 chunk 取最高单路分数。
 """
 
 from collections import defaultdict
 from collections.abc import Sequence
 
-from app.vector.base import ScoredChunk
+from app.index.values import ScoredChunk
 
 
 class RRFFusion:

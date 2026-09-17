@@ -3,7 +3,7 @@
 import re
 from collections.abc import Sequence
 
-from app.vector.base import ScoredChunk
+from app.index.values import ScoredChunk
 
 CITATION_MARKER = re.compile(r"[\[【]\s*(?:引用|参考|文献)?\s*(\d{1,2})\s*[\]】]")
 

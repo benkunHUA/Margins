@@ -3,8 +3,8 @@
 from uuid import UUID
 
 from app.domain.entities import Chunk
-from app.vector.base import ScoredChunk
-from app.vector.fusion import RRFFusion
+from app.index.fusion import RRFFusion
+from app.index.values import ScoredChunk
 
 
 def _scored(chunk_id: str, score: float) -> ScoredChunk:

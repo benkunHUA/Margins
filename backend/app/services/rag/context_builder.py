@@ -7,8 +7,8 @@ from pydantic import BaseModel
 from app.core.config import RetrievalConfig
 from app.domain.entities import Citation, Message
 from app.domain.enums import MessageRole
+from app.index.values import ScoredChunk
 from app.services.llm import ChatMessage
-from app.vector.base import ScoredChunk
 
 
 class ContextBundle(BaseModel):

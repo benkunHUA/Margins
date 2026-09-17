@@ -5,6 +5,9 @@ import logging
 from uuid import UUID
 
 from app.core.config import Settings
+from app.index.factory import create_index_backend
+from app.index.fusion import RRFFusion
+from app.index.writer import IndexWriter
 from app.repositories.memory.memory_repos import (
     InMemoryChunkRepository,
     InMemoryDocumentRepository,
@@ -41,10 +44,6 @@ from app.services.rag.hybrid_retriever import HybridRetriever
 from app.services.rag.pipeline import RAGPipeline
 from app.services.rag.query_rewriter import LLMQueryRewriter
 from app.services.reranking import DashScopeReranker, Reranker
-from app.vector.base import VectorRepository
-from app.vector.faiss_repo import FaissVectorRepository
-from app.vector.fusion import RRFFusion
-from app.vector.sparse import BM25SparseIndex
 from app.workers.parse_worker import ParseWorker
 
 logger = logging.getLogger(__name__)
@@ -62,7 +61,7 @@ class ServiceContainer:
         parser: DocumentParser | None = None,
         embeddings: EmbeddingService | None = None,
         chunker: Chunker | None = None,
-        vector: VectorRepository | None = None,
+        index_backend=None,
         llm_client: LLMClient | None = None,
         reranker: Reranker | None = None,
         image_summarizer: ImageSummarizer | None = None,
@@ -99,13 +98,8 @@ class ServiceContainer:
         self.plain_parser = PlainTextParser()
         self.embedding = embeddings or DashScopeEmbeddingService(settings.models)
         self.chunker = chunker or MarkdownChunker()
-        self.vector = vector or FaissVectorRepository(
-            settings.storage,
-            self.embedding,
-            settings.models.embedding_dimension,
-            chunks=self.chunks,
-        )
-        self.sparse = BM25SparseIndex()
+        self.index_backend = index_backend or create_index_backend(settings)
+        self.index_writer = IndexWriter(self.index_backend, self.embedding)
         self.llm_client = llm_client or LangChainLLMClient(settings.models)
         self.reranker = reranker or DashScopeReranker(settings.models)
         self.image_summarizer = image_summarizer or DashScopeImageSummarizer(
@@ -122,8 +116,7 @@ class ServiceContainer:
             documents=self.documents,
             chunks=self.chunks,
             embeddings=self.embedding,
-            vector=self.vector,
-            sparse=self.sparse,
+            index_backend=self.index_backend,
             fusion=self.fusion,
             reranker=self.reranker,
             llm_client=self.llm_client,
@@ -131,7 +124,7 @@ class ServiceContainer:
         )
         self.rewriter = LLMQueryRewriter(self.llm_client, settings.rewrite)
         self.hybrid = HybridRetriever(
-            self.vector, self.sparse, self.embedding, self.fusion, settings.retrieval
+            self.index_backend, self.embedding, self.fusion, settings.retrieval
         )
         self.context_builder = ContextBuilder(settings.retrieval)
         self.rag = RAGPipeline(
@@ -142,13 +135,7 @@ class ServiceContainer:
             self.llm_client,
             settings.retrieval,
         )
-        self.indexing = IndexingPipeline(
-            self.chunker,
-            self.embedding,
-            self.vector,
-            self.chunks,
-            sparse=self.sparse,
-        )
+        self.indexing = IndexingPipeline(self.chunker, self.index_writer)
         self.worker = ParseWorker(
             self.parse_queue,
             self.parser,
@@ -165,8 +152,7 @@ class ServiceContainer:
             self.documents,
             self.chunks,
             self.jobs,
-            self.vector,
-            self.sparse,
+            self.index_writer,
             self.parse_queue,
             settings,
         )
@@ -182,26 +168,16 @@ class ServiceContainer:
         storage = self.settings.storage
         storage.data_dir.mkdir(parents=True, exist_ok=True)
         storage.upload_dir.mkdir(parents=True, exist_ok=True)
-        storage.faiss_index_dir.mkdir(parents=True, exist_ok=True)
         storage.parsed_dir.mkdir(parents=True, exist_ok=True)
         if self._engine is not None:
             await asyncio.to_thread(run_migrations, storage.data_dir)
         await self.eval_service.mark_stale_failed()
-        await self.vector.load()
-        rows = await self.chunks.list_all()
-        if await self.chunks.allocate_missing_ids():
-            rows = await self.chunks.list_all()
-        db_ids = {c.faiss_id for c in rows if c.faiss_id is not None}
-        if len(db_ids) == len(rows) and db_ids == self.vector.loaded_ids():
-            logger.info("向量索引已完整，跳过重建（chunks=%d）", len(rows))
-        else:
-            try:
-                await self.vector.rebuild(rows)
-            except Exception:
-                logger.warning(
-                    "向量索引重建失败，启动继续（检索可能缺失部分文档）", exc_info=True
-                )
-        await self.sparse.rebuild(rows)
+        await self.index_backend.initialize()
+        stats = await self.index_backend.stats()
+        logger.info(
+            "索引后端就绪",
+            extra={"extra_fields": {"backend": self.settings.index.backend, **stats}},
+        )
         if self.start_worker:
             self._worker_task = asyncio.create_task(self.worker.run())
         logger.info("容器启动完成", extra={"extra_fields": {"data_dir": str(storage.data_dir)}})
@@ -214,7 +190,7 @@ class ServiceContainer:
                 await self._worker_task
             except asyncio.CancelledError:
                 pass
-        await self.vector.save()
+        await self.index_backend.close()
         if self._engine is not None:
             await self._engine.dispose()
         logger.info("容器关闭")

@@ -9,7 +9,7 @@ import dashscope
 
 from app.core.config import ModelConfig
 from app.core.logging import get_logger
-from app.vector.base import ScoredChunk
+from app.index.values import ScoredChunk
 
 logger = get_logger(__name__)
 

@@ -5,22 +5,14 @@ from uuid import uuid4
 from app.core.config import RetrievalConfig
 from app.domain.entities import Chunk
 from app.domain.events import DoneEvent
+from app.index.fusion import RRFFusion
 from app.services.embedding import EmbeddingService
 from app.services.llm import LLMClient
 from app.services.rag.context_builder import ContextBuilder
 from app.services.rag.hybrid_retriever import HybridRetriever
 from app.services.rag.pipeline import RAGPipeline
 from app.services.rag.trace import Trace
-from app.vector.base import ScoredChunk, VectorRepository
-from app.vector.fusion import RRFFusion
-
-
-class EmptySparse:
-    async def search(self, query, k):
-        return []
-
-    async def rebuild(self, chunks):
-        pass
+from tests.index.fakes import StubIndexBackend
 
 
 class FakeEmbeddings(EmbeddingService):
@@ -29,29 +21,6 @@ class FakeEmbeddings(EmbeddingService):
 
     async def embed_texts(self, texts):
         return [[1.0, 0.0]] * len(texts)
-
-
-class FakeVector(VectorRepository):
-    def __init__(self, chunks: list[Chunk]) -> None:
-        self.chunks = chunks
-
-    async def search(self, embedding, k):
-        return [
-            ScoredChunk(chunk=chunk, score=0.9 - index * 0.1)
-            for index, chunk in enumerate(self.chunks)
-        ]
-
-    async def add(self, items):
-        pass
-
-    async def rebuild(self, chunks):
-        pass
-
-    async def save(self):
-        pass
-
-    async def load(self):
-        pass
 
 
 class FakeLLM(LLMClient):
@@ -113,8 +82,7 @@ async def test_pipeline_records_all_five_stages_into_trace() -> None:
     )
     embeddings = FakeEmbeddings()
     hybrid = HybridRetriever(
-        FakeVector([_chunk("a.pdf", "内容一")]),
-        EmptySparse(),
+        StubIndexBackend([_chunk("a.pdf", "内容一")]),
         embeddings,
         RRFFusion(),
         cfg,

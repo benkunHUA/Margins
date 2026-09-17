@@ -6,22 +6,15 @@ from app.core.config import RetrievalConfig
 from app.domain.entities import Chunk, Message
 from app.domain.enums import MessageRole
 from app.domain.events import CitationsEvent, DeltaEvent, DoneEvent, ErrorEvent
+from app.index.fusion import RRFFusion
+from app.index.values import ScoredChunk
 from app.services.embedding import EmbeddingService
 from app.services.llm import ChatMessage, LLMClient
 from app.services.rag.context_builder import ContextBuilder
 from app.services.rag.hybrid_retriever import HybridRetriever
 from app.services.rag.pipeline import RAGPipeline
 from app.services.rag.postprocess import cap_per_document
-from app.vector.base import ScoredChunk, VectorRepository
-from app.vector.fusion import RRFFusion
-
-
-class EmptySparse:
-    async def search(self, query, k):
-        return []
-
-    async def rebuild(self, chunks):
-        pass
+from tests.index.fakes import StubDenseIndex, StubIndexBackend
 
 
 class FakeEmbeddings(EmbeddingService):
@@ -30,30 +23,6 @@ class FakeEmbeddings(EmbeddingService):
 
     async def embed_texts(self, texts):
         return [[1.0, 0.0]] * len(texts)
-
-
-class FakeVector(VectorRepository):
-    def __init__(self, chunks: list[Chunk], scores: list[float] | None = None) -> None:
-        self.chunks = chunks
-        self.scores = scores or [0.9 - index * 0.05 for index in range(len(chunks))]
-
-    async def search(self, embedding, k):
-        return [
-            ScoredChunk(chunk=chunk, score=score)
-            for chunk, score in zip(self.chunks, self.scores, strict=True)
-        ]
-
-    async def add(self, items):
-        pass
-
-    async def rebuild(self, chunks):
-        pass
-
-    async def save(self):
-        pass
-
-    async def load(self):
-        pass
 
 
 class FakeLLM(LLMClient):
@@ -118,9 +87,7 @@ def _pipeline(
 ):
     cfg = config or _config()
     embeddings = FakeEmbeddings()
-    hybrid = HybridRetriever(
-        FakeVector(chunks), EmptySparse(), embeddings, RRFFusion(), cfg
-    )
+    hybrid = HybridRetriever(StubIndexBackend(chunks), embeddings, RRFFusion(), cfg)
     llm = llm or FakeLLM()
     rag = RAGPipeline(
         rewriter=rewriter or FakeRewriter(),
@@ -294,8 +261,7 @@ async def test_retrieval_threshold_filters_low_scores() -> None:
     ]
     cfg = _config(relevance_threshold=0.3)
     hybrid = HybridRetriever(
-        FakeVector(chunks, scores=[0.9, 0.1]),
-        EmptySparse(),
+        StubIndexBackend(chunks, [], dense_scores=[0.9, 0.1]),
         FakeEmbeddings(),
         RRFFusion(),
         cfg,
@@ -306,15 +272,15 @@ async def test_retrieval_threshold_filters_low_scores() -> None:
 
 
 async def test_run_emits_error_on_failure() -> None:
-    class BoomVector(FakeVector):
-        async def search(self, embedding, k):
+    class BoomDense(StubDenseIndex):
+        async def search(self, embedding, k, scope=None):
             raise RuntimeError("vector down")
 
     chunk = _chunk("a.pdf", "x")
     cfg = _config()
-    hybrid = HybridRetriever(
-        BoomVector([chunk]), EmptySparse(), FakeEmbeddings(), RRFFusion(), cfg
-    )
+    backend = StubIndexBackend([chunk])
+    backend.dense = BoomDense([chunk])
+    hybrid = HybridRetriever(backend, FakeEmbeddings(), RRFFusion(), cfg)
     rag = RAGPipeline(
         rewriter=FakeRewriter(),
         hybrid=hybrid,

@@ -13,6 +13,7 @@ from app.domain.entities import (
     EvalRunConfig,
 )
 from app.domain.enums import EvalItemStatus, EvalRunStatus
+from app.index.fusion import RRFFusion
 from app.repositories.memory.memory_repos import (
     InMemoryChunkRepository,
     InMemoryDocumentRepository,
@@ -24,9 +25,7 @@ from app.services.embedding import EmbeddingService
 from app.services.eval.runner import EvalRunner
 from app.services.llm import LLMClient
 from app.services.reranking import Reranker
-from app.vector.base import ScoredChunk, VectorRepository
-from app.vector.fusion import RRFFusion
-from app.vector.sparse import BM25SparseIndex
+from tests.index.fakes import StubIndexBackend
 
 
 class FakeEmbeddings(EmbeddingService):
@@ -35,29 +34,6 @@ class FakeEmbeddings(EmbeddingService):
 
     async def embed_query(self, text):
         return [1.0, 0.0]
-
-
-class FakeVector(VectorRepository):
-    def __init__(self, chunks: list[Chunk]) -> None:
-        self.chunks = chunks
-
-    async def search(self, embedding, k):
-        return [
-            ScoredChunk(chunk=chunk, score=0.9 - index * 0.1)
-            for index, chunk in enumerate(self.chunks[:k])
-        ]
-
-    async def add(self, items):
-        pass
-
-    async def rebuild(self, chunks):
-        pass
-
-    async def save(self):
-        pass
-
-    async def load(self):
-        pass
 
 
 class FakeReranker(Reranker):
@@ -128,8 +104,7 @@ async def env_factory(tmp_path):
             documents=documents,
             chunks=chunks,
             embeddings=FakeEmbeddings(),
-            vector=FakeVector([target, other]),
-            sparse=BM25SparseIndex(),
+            index_backend=StubIndexBackend([target, other]),
             fusion=RRFFusion(),
             reranker=FakeReranker(),
             llm_client=FakeLLM(),

@@ -10,13 +10,16 @@ from app.services.embedding import EmbeddingService
 from app.services.llm import LLMClient
 from app.services.reranking import Reranker
 
+# 真实 SQLite 索引后端的 vec0 表维度与 EMBEDDING_DIMENSION 一致（默认 1024）
+DIMENSION = 1024
+
 
 class FakeEmbeddings(EmbeddingService):
     async def embed_query(self, text):
-        return [1.0, 0.0]
+        return [1.0] + [0.0] * (DIMENSION - 1)
 
     async def embed_texts(self, texts):
-        return [[1.0, 0.0]] * len(texts)
+        return [[1.0] + [0.0] * (DIMENSION - 1)] * len(texts)
 
 
 class FakeLLM(LLMClient):

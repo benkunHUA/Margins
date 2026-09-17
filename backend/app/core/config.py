@@ -19,10 +19,6 @@ class StorageConfig(BaseModel):
         return self.data_dir / "uploads"
 
     @property
-    def faiss_index_dir(self) -> Path:
-        return self.data_dir / "faiss_index"
-
-    @property
     def parsed_dir(self) -> Path:
         return self.data_dir / "parsed"
 

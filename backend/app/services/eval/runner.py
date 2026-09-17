@@ -9,6 +9,8 @@ from app.core.config import RetrievalConfig, RewriteConfig, Settings
 from app.core.logging import get_logger
 from app.domain.entities import Chunk, EvalRun, EvalRunConfig, EvalRunItem
 from app.domain.enums import EvalItemStatus, EvalRunStatus
+from app.index.fusion import RRFFusion
+from app.index.ports import IndexBackendPort
 from app.repositories.base import (
     ChunkRepository,
     DocumentRepository,
@@ -37,8 +39,6 @@ from app.services.rag.postprocess import (
 )
 from app.services.rag.query_rewriter import LLMQueryRewriter
 from app.services.reranking import DashScopeReranker, Reranker
-from app.vector.base import SparseIndex, VectorRepository
-from app.vector.fusion import RRFFusion
 
 logger = get_logger(__name__)
 
@@ -53,8 +53,7 @@ class EvalRunner:
         documents: DocumentRepository,
         chunks: ChunkRepository,
         embeddings: EmbeddingService,
-        vector: VectorRepository,
-        sparse: SparseIndex,
+        index_backend: IndexBackendPort,
         fusion: RRFFusion,
         reranker: Reranker,
         llm_client: LLMClient,
@@ -66,8 +65,7 @@ class EvalRunner:
         self._documents = documents
         self._chunks = chunks
         self._embeddings = embeddings
-        self._vector = vector
-        self._sparse = sparse
+        self._index_backend = index_backend
         self._fusion = fusion
         self._reranker = reranker
         self._llm = llm_client
@@ -214,8 +212,7 @@ class EvalRunner:
             ),
         )
         hybrid = HybridRetriever(
-            self._vector,
-            self._sparse,
+            self._index_backend,
             self._embeddings,
             self._fusion,
             retrieval_config,

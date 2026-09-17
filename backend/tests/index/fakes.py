@@ -137,3 +137,93 @@ class InMemoryIndexBackend(IndexBackendPort):
                 self.records.pop(chunk_id, None)
         for record in change.upserts:
             self.records[record.chunk_id] = record
+
+
+class StubDenseIndex(DenseIndexPort):
+    """固定结果集的向量路替身：只验证上层编排时用，不模拟真实相似度。"""
+
+    def __init__(
+        self,
+        chunks: Sequence[Chunk] | None = None,
+        scores: Sequence[float] | None = None,
+    ) -> None:
+        self.chunks = list(chunks or [])
+        self.scores = (
+            list(scores)
+            if scores is not None
+            else [0.9 - index * 0.05 for index in range(len(self.chunks))]
+        )
+        self.scopes: list[RetrievalScope | None] = []
+
+    async def upsert(self, records: Sequence[IndexRecord]) -> None:
+        return None
+
+    async def delete(self, chunk_ids: Sequence[UUID]) -> None:
+        return None
+
+    async def delete_by_document(self, document_id: UUID) -> None:
+        return None
+
+    async def search(
+        self,
+        embedding: list[float],
+        k: int,
+        scope: RetrievalScope | None = None,
+    ) -> list[ScoredChunk]:
+        self.scopes.append(scope)
+        return [
+            ScoredChunk(chunk=chunk, score=score)
+            for chunk, score in zip(self.chunks[:k], self.scores[:k], strict=False)
+        ]
+
+
+class StubSparseIndex(SparseIndexPort):
+    """固定结果集的关键词路替身（默认把候选倒序，制造与向量路不同的排序）。"""
+
+    def __init__(self, chunks: Sequence[Chunk] | None = None) -> None:
+        self.chunks = list(chunks or [])
+        self.scopes: list[RetrievalScope | None] = []
+
+    async def upsert(self, records: Sequence[IndexRecord]) -> None:
+        return None
+
+    async def delete(self, chunk_ids: Sequence[UUID]) -> None:
+        return None
+
+    async def delete_by_document(self, document_id: UUID) -> None:
+        return None
+
+    async def search(
+        self,
+        query: str,
+        k: int,
+        scope: RetrievalScope | None = None,
+    ) -> list[ScoredChunk]:
+        self.scopes.append(scope)
+        return [ScoredChunk(chunk=chunk, score=0.0) for chunk in reversed(self.chunks[:k])]
+
+
+class StubIndexBackend(IndexBackendPort):
+    """固定召回结果 + 记录写入调用的后端替身。"""
+
+    def __init__(
+        self,
+        dense_chunks: Sequence[Chunk] | None = None,
+        sparse_chunks: Sequence[Chunk] | None = None,
+        dense_scores: Sequence[float] | None = None,
+    ) -> None:
+        self.dense = StubDenseIndex(dense_chunks, dense_scores)
+        self.sparse = StubSparseIndex(sparse_chunks)
+        self.applied: list[IndexChangeSet] = []
+
+    async def initialize(self) -> None:
+        return None
+
+    async def close(self) -> None:
+        return None
+
+    async def stats(self) -> dict:
+        return {"chunks": len(self.dense.chunks), "applied": len(self.applied)}
+
+    async def apply(self, change: IndexChangeSet) -> None:
+        self.applied.append(change)

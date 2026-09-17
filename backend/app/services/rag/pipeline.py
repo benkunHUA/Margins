@@ -13,6 +13,7 @@ from app.domain.events import (
     ErrorEvent,
     RagEvent,
 )
+from app.index.ports import RetrievalScope
 from app.services.llm import ChatMessage, LLMClient
 from app.services.rag.context_builder import ContextBuilder
 from app.services.rag.hybrid_retriever import HybridRetriever
@@ -51,6 +52,7 @@ class RAGPipeline:
         history: Sequence[Message],
         *,
         trace: Trace | None = None,
+        scope: RetrievalScope | None = None,
     ) -> AsyncIterator[RagEvent]:
         start = time.perf_counter()
         try:
@@ -64,9 +66,11 @@ class RAGPipeline:
             result_lists = []
             for query in queries:
                 if trace is not None:
-                    result_lists.append(await self._hybrid.retrieve(query, trace=trace))
+                    result_lists.append(
+                        await self._hybrid.retrieve(query, scope=scope, trace=trace)
+                    )
                 else:
-                    result_lists.append(await self._hybrid.retrieve(query))
+                    result_lists.append(await self._hybrid.retrieve(query, scope=scope))
             candidates = merge_candidates(result_lists)
             retrieve_ms = round((time.perf_counter() - t0) * 1000, 1)
             t0 = time.perf_counter()

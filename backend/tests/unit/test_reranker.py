@@ -4,8 +4,8 @@ from uuid import uuid4
 
 from app.core.config import ModelConfig
 from app.domain.entities import Chunk
+from app.index.values import ScoredChunk
 from app.services.reranking import DashScopeReranker
-from app.vector.base import ScoredChunk
 
 
 def _chunk(text: str) -> Chunk:
