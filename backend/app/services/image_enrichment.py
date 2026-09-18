@@ -80,3 +80,28 @@ def enrich_markdown_with_summaries(
 
 def _file_name(ref: str) -> str:
     return Path(ref.strip().strip("\"'")).name
+
+
+def rename_image_refs(markdown: str, rename: Mapping[str, str]) -> str:
+    """按 ``原文件名 -> 新文件名`` 改写 markdown 内的图片引用。
+
+    用于超长 PDF 分段解析：每段是独立的 MinerU 任务，图片名会重复，
+    落盘时加了段前缀，这里把引用同步改掉。未命中映射的引用保持原样。
+    """
+    if not markdown or not rename:
+        return markdown or ""
+
+    def _sub(match: re.Match) -> str:
+        start, end = match.span(1)
+        ref = match.group(1)
+        name = _file_name(ref)
+        new_name = rename.get(name)
+        if new_name is None:
+            return match.group(0)
+        new_ref = f"{ref[: len(ref) - len(name)]}{new_name}"
+        head = match.group(0)[: start - match.start()]
+        tail = match.group(0)[end - match.start() :]
+        return f"{head}{new_ref}{tail}"
+
+    text = _MD_IMAGE_RE.sub(_sub, markdown)
+    return _HTML_IMG_RE.sub(_sub, text)

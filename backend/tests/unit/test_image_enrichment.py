@@ -4,6 +4,7 @@ from app.services.image_enrichment import (
     EnrichmentResult,
     contains_image_placeholder,
     enrich_markdown_with_summaries,
+    rename_image_refs,
 )
 
 
@@ -67,3 +68,25 @@ def test_empty_summaries_returns_unchanged() -> None:
     assert result.replaced == 0
     assert result.appended == 0
     assert result.markdown == markdown
+
+
+def test_rename_image_refs_rewrites_markdown_and_html_refs() -> None:
+    markdown = '![](images/a.png)\n\n<img src="images/b.jpg">\n\n![](images/c.png)'
+
+    renamed = rename_image_refs(markdown, {"a.png": "p0001-a.png", "b.jpg": "p0001-b.jpg"})
+
+    assert "![](images/p0001-a.png)" in renamed
+    assert '<img src="images/p0001-b.jpg">' in renamed
+    assert "![](images/c.png)" in renamed  # 未命中映射的原样保留
+
+
+def test_rename_image_refs_keeps_alt_text() -> None:
+    assert (
+        rename_image_refs("![a.png](images/a.png)", {"a.png": "p0001-a.png"})
+        == "![a.png](images/p0001-a.png)"
+    )
+
+
+def test_rename_image_refs_empty_inputs_are_noop() -> None:
+    assert rename_image_refs("", {"a.png": "p0001-a.png"}) == ""
+    assert rename_image_refs("![](images/a.png)", {}) == "![](images/a.png)"
