@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from app.core.config import ParserConfig
+from app.core.config import ParserConfig, Settings
 from app.services.parsing import MineruOnlineParser, ParsedDocument
 
 
@@ -217,3 +217,9 @@ async def test_force_extract_bypasses_flash_route(tmp_path: Path) -> None:
 def test_supports_full_extract_depends_on_token() -> None:
     assert MineruOnlineParser(ParserConfig(mineru_api_token="t")).supports_full_extract is True
     assert MineruOnlineParser(ParserConfig(mineru_api_token="")).supports_full_extract is False
+
+
+def test_parser_config_max_pages_per_call_defaults_to_200() -> None:
+    assert Settings(_env_file=None).parser.max_pages_per_call == 200
+    custom = Settings(_env_file=None, parser_max_pages_per_call=120)
+    assert custom.parser.max_pages_per_call == 120

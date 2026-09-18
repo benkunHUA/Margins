@@ -72,6 +72,7 @@ docker compose up --build
 | `EMBEDDING_MODEL` | 默认 `text-embedding-v4` |
 | `RERANK_MODEL` | 默认 `qwen3-rerank` |
 | `MINERU_API_TOKEN` | MinerU 在线解析 Token（[获取](https://mineru.net/apiManage/token)） |
+| `PARSER_MAX_PAGES_PER_CALL` | 单次 MinerU extract 最大页数，默认 `200`；超出自动分段解析并合并 |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | OpenAI 兼容 LLM 配置，默认 DeepSeek |
 | `DATA_DIR` | 数据目录（SQLite 业务库与索引、上传文件、解析结果） |
 | `INDEX_BACKEND` | 索引后端，默认 `sqlite`（FTS5 + sqlite-vec 同库） |

@@ -52,6 +52,8 @@ class ParserConfig(BaseModel):
     mineru_api_token: str = ""
     flash_max_size_mb: int = 10
     flash_max_pages: int = 20
+    # 单次 MinerU extract 请求的最大页数（服务端上限 200）；超出则按页范围分段解析后合并
+    max_pages_per_call: int = 200
 
 
 class QueueConfig(BaseModel):
@@ -104,6 +106,7 @@ class Settings(BaseSettings):
     mineru_api_token: str = Field("", validation_alias="MINERU_API_TOKEN")
     flash_max_size_mb: int = Field(10, validation_alias="FLASH_MAX_SIZE_MB")
     flash_max_pages: int = Field(20, validation_alias="FLASH_MAX_PAGES")
+    parser_max_pages_per_call: int = Field(200, validation_alias="PARSER_MAX_PAGES_PER_CALL")
 
     # ----- LLM -----
     llm_base_url: str = Field("https://api.deepseek.com", validation_alias="LLM_BASE_URL")
@@ -181,6 +184,7 @@ class Settings(BaseSettings):
             mineru_api_token=self.mineru_api_token,
             flash_max_size_mb=self.flash_max_size_mb,
             flash_max_pages=self.flash_max_pages,
+            max_pages_per_call=self.parser_max_pages_per_call,
         )
 
     @property
