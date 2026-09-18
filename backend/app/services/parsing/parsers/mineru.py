@@ -70,7 +70,6 @@ class MineruOnlineParser(DocumentParser):
         images_dir: Path | None,
     ) -> ParsedDocument:
         """超长 PDF：按页范围串行解析，合并 markdown / 图片 / meta。"""
-        source = str(file_path)
         ranges = _page_ranges(pages, self._config.max_pages_per_call)
         total_parts = len(ranges)
         markdowns: list[str] = []
@@ -79,16 +78,9 @@ class MineruOnlineParser(DocumentParser):
 
         for index, page_range in enumerate(ranges, start=1):
             started = time.perf_counter()
-            result = await asyncio.to_thread(self._client.extract, source, pages=page_range)
-            part_markdown = _markdown(result)
-            if _state(result) != "done" or not part_markdown:
-                raise ValueError(
-                    _failure_message(
-                        file_path,
-                        result,
-                        part_note=f"第 {index}/{total_parts} 段 {page_range} 页",
-                    )
-                )
+            result, part_markdown = await self._extract_part(
+                file_path, page_range, index, total_parts
+            )
 
             start_page = int(page_range.split("-", 1)[0])
             part_images: list[Path] = []
@@ -149,6 +141,71 @@ class MineruOnlineParser(DocumentParser):
                 "pages_range": ",".join(ranges),
             },
         )
+
+    async def _extract_part(
+        self,
+        file_path: Path,
+        page_range: str,
+        index: int,
+        total_parts: int,
+    ) -> tuple[Any, str]:
+        """解析单个页段；段内失败按退避重试，耗尽后抛错给上层（队列）继续兜底。"""
+        attempts = max(1, self._config.part_retry_attempts)
+        backoff = self._config.part_retry_backoff_seconds
+
+        for attempt in range(1, attempts + 1):
+            try:
+                result = await asyncio.to_thread(
+                    self._client.extract, str(file_path), pages=page_range
+                )
+                markdown = _markdown(result)
+                if _state(result) != "done" or not markdown:
+                    raise ValueError(
+                        _failure_message(
+                            file_path,
+                            result,
+                            part_note=f"第 {index}/{total_parts} 段 {page_range} 页",
+                        )
+                    )
+                if attempt > 1:
+                    logger.info(
+                        "MinerU 分段重试成功",
+                        extra={
+                            "extra_fields": {
+                                "event": "parse_part_retry_ok",
+                                "file": file_path.name,
+                                "part": index,
+                                "total_parts": total_parts,
+                                "pages": page_range,
+                                "attempt": attempt,
+                            }
+                        },
+                    )
+                return result, markdown
+            except Exception as exc:
+                if attempt >= attempts:
+                    raise
+                delay = backoff[min(attempt - 1, len(backoff) - 1)] if backoff else 0.0
+                logger.warning(
+                    "MinerU 分段解析失败，准备重试该段",
+                    extra={
+                        "extra_fields": {
+                            "event": "parse_part_retry",
+                            "file": file_path.name,
+                            "part": index,
+                            "total_parts": total_parts,
+                            "pages": page_range,
+                            "attempt": attempt,
+                            "attempts": attempts,
+                            "backoff_seconds": delay,
+                            "error": str(exc),
+                        }
+                    },
+                )
+                if delay > 0:
+                    await asyncio.sleep(delay)
+
+        raise RuntimeError("unreachable")  # pragma: no cover
 
 
 def _page_ranges(total_pages: int, page_size: int) -> list[str]:

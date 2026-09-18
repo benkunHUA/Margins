@@ -54,6 +54,9 @@ class ParserConfig(BaseModel):
     flash_max_pages: int = 20
     # 单次 MinerU extract 请求的最大页数（服务端上限 200）；超出则按页范围分段解析后合并
     max_pages_per_call: int = 200
+    # 单个页段失败后的段内重试次数（含首次）：瞬时失败自愈，且不会重跑其它段
+    part_retry_attempts: int = 2
+    part_retry_backoff_seconds: tuple[float, ...] = (10.0, 30.0)
 
 
 class QueueConfig(BaseModel):
@@ -107,6 +110,7 @@ class Settings(BaseSettings):
     flash_max_size_mb: int = Field(10, validation_alias="FLASH_MAX_SIZE_MB")
     flash_max_pages: int = Field(20, validation_alias="FLASH_MAX_PAGES")
     parser_max_pages_per_call: int = Field(200, validation_alias="PARSER_MAX_PAGES_PER_CALL")
+    parser_part_retry_attempts: int = Field(2, validation_alias="PARSER_PART_RETRY_ATTEMPTS")
 
     # ----- LLM -----
     llm_base_url: str = Field("https://api.deepseek.com", validation_alias="LLM_BASE_URL")
@@ -185,6 +189,7 @@ class Settings(BaseSettings):
             flash_max_size_mb=self.flash_max_size_mb,
             flash_max_pages=self.flash_max_pages,
             max_pages_per_call=self.parser_max_pages_per_call,
+            part_retry_attempts=self.parser_part_retry_attempts,
         )
 
     @property

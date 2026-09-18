@@ -12,15 +12,19 @@ from tests.unit.test_parsing import _build_pdf
 class FakePagingClient:
     """按 ``pages`` 参数返回带页码标记的 markdown，并记录每次调用参数。"""
 
-    def __init__(self, fail_pages: str | None = None) -> None:
+    def __init__(self, fail_pages: str | None = None, fail_times: int = 0) -> None:
         self.calls: list[dict] = []
         self.fail_pages = fail_pages
+        self.fail_times = fail_times
+        self._failures = 0
 
     def extract(self, source: str, **kwargs) -> dict:
         self.calls.append({"source": source, **kwargs})
         pages = kwargs.get("pages")
         if pages is not None and pages == self.fail_pages:
-            return {"state": "failed", "err_code": "", "error": "boom", "markdown": None}
+            self._failures += 1
+            if self.fail_times == 0 or self._failures <= self.fail_times:
+                return {"state": "failed", "err_code": "", "error": "boom", "markdown": None}
         start = (pages or "1").split("-")[0]
         return {
             "markdown": f"# 起始页 {start}\n\n![](images/img-0.png)",
@@ -34,7 +38,9 @@ class FakePagingClient:
 
 
 def _config(**overrides) -> ParserConfig:
-    return ParserConfig(mineru_api_token="t", **overrides)
+    defaults: dict = {"mineru_api_token": "t", "part_retry_backoff_seconds": (0.0, 0.0)}
+    defaults.update(overrides)
+    return ParserConfig(**defaults)
 
 
 def test_page_ranges_splits_at_boundaries() -> None:
@@ -83,6 +89,24 @@ async def test_part_failure_reports_part_number_and_pages(tmp_path: Path) -> Non
     message = str(excinfo.value)
     assert "第 2/2 段 201-268 页" in message
     assert "boom" in message
+    # 段内重试：失败的段被重试 2 次，成功过的第 1 段不重跑
+    assert [call["pages"] for call in client.calls] == ["1-200", "201-268", "201-268"]
+
+
+async def test_transient_part_failure_recovers_without_reparsing_other_parts(
+    tmp_path: Path,
+) -> None:
+    """第 2 段瞬时失败后重试成功：第 1 段（200 页）不应被重跑。"""
+    client = FakePagingClient(fail_pages="201-268", fail_times=1)
+    parser = MineruOnlineParser(_config(), client=client)
+    f = tmp_path / "long.pdf"
+    f.write_bytes(_build_pdf(268))
+
+    result = await parser.parse(f, file_type="pdf")
+
+    assert [call["pages"] for call in client.calls] == ["1-200", "201-268", "201-268"]
+    assert result.meta["part_count"] == 2
+    assert "# 起始页 201" in result.markdown
 
 
 async def test_custom_part_size_splits_into_three(tmp_path: Path) -> None:
