@@ -43,13 +43,17 @@ class MineruOnlineParser(DocumentParser):
         pages = _count_pdf_pages(file_path)
         source = str(file_path)
         if not force_extract and _should_use_flash(size_mb, pages, self._config):
-            result = await asyncio.to_thread(self._client.flash_extract, source)
+            result = await asyncio.to_thread(
+                self._client.flash_extract, source, timeout=self._config.timeout_seconds
+            )
             return await self._single_result(file_path, result, images_dir)
 
         if pages is not None and pages > self._config.max_pages_per_call:
             return await self._parse_in_parts(file_path, pages, images_dir, cache_dir)
 
-        result = await asyncio.to_thread(self._client.extract, source)
+        result = await asyncio.to_thread(
+            self._client.extract, source, timeout=self._config.timeout_seconds
+        )
         return await self._single_result(file_path, result, images_dir)
 
     async def _single_result(
@@ -190,7 +194,10 @@ class MineruOnlineParser(DocumentParser):
         for attempt in range(1, attempts + 1):
             try:
                 result = await asyncio.to_thread(
-                    self._client.extract, str(file_path), pages=page_range
+                    self._client.extract,
+                    str(file_path),
+                    pages=page_range,
+                    timeout=self._config.timeout_seconds,
                 )
                 markdown = _markdown(result)
                 if _state(result) != "done" or not markdown:
@@ -218,6 +225,14 @@ class MineruOnlineParser(DocumentParser):
                 return result, markdown
             except Exception as exc:
                 if attempt >= attempts:
+                    if _is_timeout(exc):
+                        raise ValueError(
+                            f"MinerU 解析超时: {file_path.name} "
+                            f"[第 {index}/{total_parts} 段 {page_range} 页] "
+                            f"等待超过 {self._config.timeout_seconds}s"
+                            "（可调大 .env 中的 PARSER_EXTRACT_TIMEOUT_SECONDS）: "
+                            f"{exc}"
+                        ) from exc
                     raise
                 delay = backoff[min(attempt - 1, len(backoff) - 1)] if backoff else 0.0
                 logger.warning(
@@ -348,6 +363,11 @@ def _count_pdf_pages(file_path: Path) -> int | None:
         return len(PdfReader(str(file_path)).pages)
     except Exception:
         return None
+
+
+def _is_timeout(exc: Exception) -> bool:
+    """SDK 的等待超时（`mineru.TimeoutError` / `[TIMEOUT] …` 文本）。"""
+    return "timeout" in type(exc).__name__.lower() or "timeout" in str(exc).lower()
 
 
 def _field(result, name: str, default=None):

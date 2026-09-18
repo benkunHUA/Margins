@@ -74,6 +74,7 @@ docker compose up --build
 | `MINERU_API_TOKEN` | MinerU 在线解析 Token（[获取](https://mineru.net/apiManage/token)） |
 | `PARSER_MAX_PAGES_PER_CALL` | 单次 MinerU extract 最大页数，默认 `200`；超出自动分段解析并合并 |
 | `PARSER_PART_RETRY_ATTEMPTS` | 每个页段的段内重试次数，默认 `2`（瞬时失败只重试该段） |
+| `PARSER_EXTRACT_TIMEOUT_SECONDS` | 单次 MinerU 调用等待上限（秒），默认 `1800`（SDK 默认 300 对 200 页偏短） |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | OpenAI 兼容 LLM 配置，默认 DeepSeek |
 | `DATA_DIR` | 数据目录（SQLite 业务库与索引、上传文件、解析结果） |
 | `INDEX_BACKEND` | 索引后端，默认 `sqlite`（FTS5 + sqlite-vec 同库） |
@@ -127,6 +128,9 @@ MinerU 在线服务对单次 `extract` 请求有 200 页上限。页数超过 `P
 5. 已成功的段写入段级缓存 `data/parsed/<doc_id>.parts/`，队列重试或手动「重新解析」
    时直接复用，不会重跑先前成功的 200 页；解析成功后缓存自动清理，最终失败则保留，
    便于下次只补跑失败段。
+
+单次 MinerU 调用的等待上限由 `PARSER_EXTRACT_TIMEOUT_SECONDS`（默认 1800 秒）控制：
+SDK 自带默认只有 300 秒，200 页级别经常跑不完，被误判超时会导致重复提交同一段。
 
 日志中每段输出一条 `event=parse_part`（命中缓存为 `parse_part_cached`），合并后输出
 `event=parse_parts_merged`，便于确认分段与复用情况。

@@ -133,6 +133,36 @@ async def test_short_pdf_still_uses_single_extract_without_pages(tmp_path: Path)
     assert result.markdown.startswith("# 起始页 1")
 
 
+async def test_extract_uses_configured_timeout(tmp_path: Path) -> None:
+    """SDK 默认 timeout=300s 对 200 页级别太短，必须显式传配置值。"""
+    client = FakePagingClient()
+    parser = MineruOnlineParser(_config(timeout_seconds=1800), client=client)
+    f = tmp_path / "long.pdf"
+    f.write_bytes(_build_pdf(268))
+
+    await parser.parse(f, file_type="pdf")
+
+    assert {call["timeout"] for call in client.calls} == {1800}
+
+
+async def test_sdk_timeout_error_points_to_timeout_config(tmp_path: Path) -> None:
+    class TimeoutClient(FakePagingClient):
+        def extract(self, source: str, **kwargs) -> dict:
+            self.calls.append({"source": source, **kwargs})
+            raise RuntimeError("[TIMEOUT] Task abc did not complete within 1800s")
+
+    parser = MineruOnlineParser(_config(timeout_seconds=1800), client=TimeoutClient())
+    f = tmp_path / "long.pdf"
+    f.write_bytes(_build_pdf(268))
+
+    with pytest.raises(ValueError) as excinfo:
+        await parser.parse(f, file_type="pdf")
+
+    message = str(excinfo.value)
+    assert "PARSER_EXTRACT_TIMEOUT_SECONDS" in message
+    assert "1800" in message
+
+
 async def test_part_cache_is_reused_without_calling_mineru(tmp_path: Path) -> None:
     """已成功的段写入缓存：再次解析（重试/重新解析）直接复用，不再消耗额度。"""
     cache_dir = tmp_path / "out" / "doc.parts"
