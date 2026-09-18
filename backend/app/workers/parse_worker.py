@@ -89,12 +89,15 @@ class ParseWorker:
                 images_dir = self._images_dir(doc.id)
                 if images_dir is not None:
                     await asyncio.to_thread(_clear_dir, images_dir)
+                # 段级缓存：超长 PDF 分段解析的中间产物，成功后删除、失败保留（只补跑失败段）
+                parts_cache_dir = parsed_dir / f"{doc.id}.parts"
 
                 parser = self._select_parser(doc)
                 parsed = await parser.parse(
                     doc.file_path,
                     file_type=doc.file_type,
                     images_dir=images_dir,
+                    cache_dir=parts_cache_dir,
                 )
                 markdown = parsed.markdown
 
@@ -105,7 +108,7 @@ class ParseWorker:
                     and contains_image_placeholder(markdown)
                 ):
                     markdown, parsed = await self._upgrade_for_images(
-                        doc, parsed, markdown, images_dir
+                        doc, parsed, markdown, images_dir, parts_cache_dir
                     )
 
                 if parsed.images and self._should_summarize():
@@ -132,6 +135,7 @@ class ParseWorker:
                 job.status = ParseJobStatus.SUCCEEDED
                 job.finished_at = datetime.now(UTC)
                 await self._jobs.update(job)
+                await asyncio.to_thread(_safe_rmtree, parts_cache_dir)
                 return
             except Exception as exc:
                 attempt += 1
@@ -170,6 +174,7 @@ class ParseWorker:
         parsed: ParsedDocument,
         markdown: str,
         images_dir: Path | None,
+        cache_dir: Path | None = None,
     ) -> tuple[str, ParsedDocument]:
         """flash 结果含图时升级 extract 取图；失败降级沿用 flash 结果。"""
         if not self._parser.supports_full_extract:
@@ -184,6 +189,7 @@ class ParseWorker:
                 file_type=doc.file_type,
                 images_dir=images_dir,
                 force_extract=True,
+                cache_dir=cache_dir,
             )
             return upgraded.markdown, upgraded
         except Exception:
@@ -229,3 +235,7 @@ def _clear_dir(directory: Path) -> None:
             shutil.rmtree(child, ignore_errors=True)
         else:
             child.unlink(missing_ok=True)
+
+
+def _safe_rmtree(directory: Path) -> None:
+    shutil.rmtree(directory, ignore_errors=True)

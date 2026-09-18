@@ -18,6 +18,7 @@ class PlainTextParser(DocumentParser):
         file_type: str,
         images_dir: Path | None = None,
         force_extract: bool = False,
+        cache_dir: Path | None = None,
     ) -> ParsedDocument:
         if file_type in ("txt", "md"):
             text = file_path.read_text(encoding="utf-8", errors="replace")

@@ -1,6 +1,9 @@
 """MinerU 在线解析（大小/页数路由 + extract/flash 升级 + 超长 PDF 分段合并）。"""
 
 import asyncio
+import json
+import shutil
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -34,6 +37,7 @@ class MineruOnlineParser(DocumentParser):
         file_type: str,
         images_dir: Path | None = None,
         force_extract: bool = False,
+        cache_dir: Path | None = None,
     ) -> ParsedDocument:
         size_mb = file_path.stat().st_size / 1024 / 1024
         pages = _count_pdf_pages(file_path)
@@ -43,7 +47,7 @@ class MineruOnlineParser(DocumentParser):
             return await self._single_result(file_path, result, images_dir)
 
         if pages is not None and pages > self._config.max_pages_per_call:
-            return await self._parse_in_parts(file_path, pages, images_dir)
+            return await self._parse_in_parts(file_path, pages, images_dir, cache_dir)
 
         result = await asyncio.to_thread(self._client.extract, source)
         return await self._single_result(file_path, result, images_dir)
@@ -68,79 +72,109 @@ class MineruOnlineParser(DocumentParser):
         file_path: Path,
         pages: int,
         images_dir: Path | None,
+        cache_dir: Path | None,
     ) -> ParsedDocument:
-        """超长 PDF：按页范围串行解析，合并 markdown / 图片 / meta。"""
+        """超长 PDF：按页范围串行解析，合并 markdown / 图片 / meta。
+
+        每段的 markdown 与图片会写进段级缓存（``cache_dir``）；命中缓存的段不再调用
+        MinerU，因此同一文档的重试/重新解析不必重跑已成功的段。未传 ``cache_dir``
+        时用临时目录兜底（当次可用，不跨次复用）。
+        """
         ranges = _page_ranges(pages, self._config.max_pages_per_call)
         total_parts = len(ranges)
+        own_cache = cache_dir is None
+        cache = _PartCache(cache_dir or Path(tempfile.mkdtemp(prefix="mineru-parts-")))
         markdowns: list[str] = []
-        images: list[Path] = []
+        image_names: list[str] = []
         parts_meta: list[dict[str, Any]] = []
 
-        for index, page_range in enumerate(ranges, start=1):
-            started = time.perf_counter()
-            result, part_markdown = await self._extract_part(
-                file_path, page_range, index, total_parts
-            )
+        try:
+            for index, page_range in enumerate(ranges, start=1):
+                started = time.perf_counter()
+                cached = cache.load(page_range)
+                if cached is not None:
+                    part_markdown = str(cached["markdown"])
+                    part_images = [
+                        cache.images_dir() / name for name in cached.get("images") or []
+                    ]
+                    task_id = str(cached.get("task_id", ""))
+                else:
+                    result, part_markdown = await self._extract_part(
+                        file_path, page_range, index, total_parts
+                    )
+                    start_page = int(page_range.split("-", 1)[0])
+                    saved, rename = await asyncio.to_thread(
+                        _persist_images, result, cache.images_dir(), f"p{start_page:04d}-"
+                    )
+                    part_markdown = rename_image_refs(part_markdown, rename)
+                    part_images = saved
+                    task_id = str(_field(result, "task_id", "") or "")
+                    await asyncio.to_thread(
+                        cache.save,
+                        page_range,
+                        part_markdown,
+                        [path.name for path in saved],
+                        task_id,
+                    )
 
-            start_page = int(page_range.split("-", 1)[0])
-            part_images: list[Path] = []
-            if images_dir is not None:
-                part_images, rename = await asyncio.to_thread(
-                    _persist_images, result, images_dir, f"p{start_page:04d}-"
+                markdowns.append(part_markdown)
+                image_names.extend(path.name for path in part_images)
+                parts_meta.append(
+                    {
+                        "index": index,
+                        "pages": page_range,
+                        "task_id": task_id,
+                        "markdown_chars": len(part_markdown),
+                        "image_count": len(part_images),
+                        "cached": cached is not None,
+                    }
                 )
-                part_markdown = rename_image_refs(part_markdown, rename)
+                logger.info(
+                    "MinerU 分段解析完成" if cached is None else "MinerU 分段命中缓存",
+                    extra={
+                        "extra_fields": {
+                            "event": "parse_part" if cached is None else "parse_part_cached",
+                            "file": file_path.name,
+                            "part": index,
+                            "total_parts": total_parts,
+                            "pages": page_range,
+                            "cached": cached is not None,
+                            "image_count": len(part_images),
+                            "duration_ms": round((time.perf_counter() - started) * 1000, 1),
+                        }
+                    }
+                )
 
-            markdowns.append(part_markdown)
-            images.extend(part_images)
-            parts_meta.append(
-                {
-                    "index": index,
-                    "pages": page_range,
-                    "task_id": _field(result, "task_id", ""),
-                    "markdown_chars": len(part_markdown),
-                    "image_count": len(part_images),
-                }
+            merged = "\n\n".join(markdowns)
+            images = await asyncio.to_thread(
+                _copy_part_images, cache.images_dir(), image_names, images_dir
             )
             logger.info(
-                "MinerU 分段解析完成",
+                "MinerU 分段解析合并完成",
                 extra={
                     "extra_fields": {
-                        "event": "parse_part",
+                        "event": "parse_parts_merged",
                         "file": file_path.name,
-                        "part": index,
-                        "total_parts": total_parts,
-                        "pages": page_range,
-                        "state": _state(result),
-                        "image_count": len(part_images),
-                        "duration_ms": round((time.perf_counter() - started) * 1000, 1),
+                        "part_count": total_parts,
+                        "total_pages": pages,
+                        "markdown_chars": len(merged),
+                        "image_count": len(images),
                     }
                 },
             )
-
-        merged = "\n\n".join(markdowns)
-        logger.info(
-            "MinerU 分段解析合并完成",
-            extra={
-                "extra_fields": {
-                    "event": "parse_parts_merged",
-                    "file": file_path.name,
+            return ParsedDocument(
+                markdown=merged,
+                images=images,
+                meta={
+                    "parts": parts_meta,
                     "part_count": total_parts,
                     "total_pages": pages,
-                    "markdown_chars": len(merged),
-                    "image_count": len(images),
+                    "pages_range": ",".join(ranges),
                 }
-            },
-        )
-        return ParsedDocument(
-            markdown=merged,
-            images=images,
-            meta={
-                "parts": parts_meta,
-                "part_count": total_parts,
-                "total_pages": pages,
-                "pages_range": ",".join(ranges),
-            },
-        )
+            )
+        finally:
+            if own_cache:
+                await asyncio.to_thread(shutil.rmtree, cache.root, ignore_errors=True)
 
     async def _extract_part(
         self,
@@ -221,6 +255,79 @@ def _page_ranges(total_pages: int, page_size: int) -> list[str]:
         ranges.append(f"{start}-{end}")
         start = end + 1
     return ranges
+
+
+class _PartCache:
+    """分段解析的段级缓存（默认 `data/parsed/<doc_id>.parts/`）。
+
+    - `part-<页范围>.json`：该段 markdown、图片文件名、MinerU task_id
+    - `images/`：该段图片字节（名字已带段前缀，跨段不冲突）
+
+    命中即可跳过该段的 MinerU 调用（省额度与时间）。解析成功由 `ParseWorker`
+    删除缓存；解析最终失败则保留，便于后续只补跑失败段。
+    """
+
+    def __init__(self, root: Path) -> None:
+        self.root = Path(root)
+
+    def images_dir(self) -> Path:
+        return self.root / "images"
+
+    def _part_path(self, page_range: str) -> Path:
+        return self.root / f"part-{page_range}.json"
+
+    def load(self, page_range: str) -> dict[str, Any] | None:
+        path = self._part_path(page_range)
+        if not path.is_file():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        if not isinstance(payload, dict) or not payload.get("markdown"):
+            return None
+        return payload
+
+    def save(
+        self,
+        page_range: str,
+        markdown: str,
+        image_names: list[str],
+        task_id: str,
+    ) -> None:
+        self.root.mkdir(parents=True, exist_ok=True)
+        self._part_path(page_range).write_text(
+            json.dumps(
+                {
+                    "pages": page_range,
+                    "markdown": markdown,
+                    "images": image_names,
+                    "task_id": task_id,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+
+def _copy_part_images(
+    source_dir: Path,
+    names: list[str],
+    images_dir: Path | None,
+) -> list[Path]:
+    """把段缓存里的图片复制到 `images_dir`，供图片文字总结按文件名匹配。"""
+    if images_dir is None:
+        return []
+    images_dir.mkdir(parents=True, exist_ok=True)
+    saved: list[Path] = []
+    for name in names:
+        source = source_dir / name
+        if not source.is_file():
+            continue
+        target = images_dir / name
+        shutil.copyfile(source, target)
+        saved.append(target)
+    return saved
 
 
 def _should_use_flash(size_mb: float, pages: int | None, config: ParserConfig) -> bool:

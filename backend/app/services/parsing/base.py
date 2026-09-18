@@ -22,6 +22,7 @@ class DocumentParser(ABC):
         file_type: str,
         images_dir: Path | None = None,
         force_extract: bool = False,
+        cache_dir: Path | None = None,
     ) -> ParsedDocument: ...
 
     @property

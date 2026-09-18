@@ -19,6 +19,7 @@ class FakeParser(DocumentParser):
     def __init__(self, failures: int = 0) -> None:
         self.failures = failures
         self.calls = 0
+        self.cache_dirs: list[Path | None] = []
 
     async def parse(
         self,
@@ -27,8 +28,14 @@ class FakeParser(DocumentParser):
         file_type: str,
         images_dir: Path | None = None,
         force_extract: bool = False,
+        cache_dir: Path | None = None,
     ) -> ParsedDocument:
         self.calls += 1
+        self.cache_dirs.append(cache_dir)
+        if cache_dir is not None:
+            # 模拟分段解析写入段级缓存
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            (cache_dir / "part-1-200.json").write_text("{}", encoding="utf-8")
         if self.calls <= self.failures:
             raise RuntimeError("mineru boom")
         return ParsedDocument(markdown="# ok")
@@ -131,6 +138,7 @@ class SequenceParser(DocumentParser):
         file_type: str,
         images_dir: Path | None = None,
         force_extract: bool = False,
+        cache_dir: Path | None = None,
     ) -> ParsedDocument:
         self.calls.append({"images_dir": images_dir, "force_extract": force_extract})
         result = self.results.pop(0)
@@ -169,6 +177,7 @@ class SpyParser(DocumentParser):
         file_type: str,
         images_dir: Path | None = None,
         force_extract: bool = False,
+        cache_dir: Path | None = None,
     ) -> ParsedDocument:
         self.calls += 1
         return ParsedDocument(markdown=f"#{self.name}")
@@ -376,3 +385,28 @@ async def test_summary_failure_keeps_original_markdown(tmp_path) -> None:
     assert updated.status == DocumentStatus.READY
     assert updated.parse_error is None
     assert worker._indexing.runs[0][0] == original
+
+
+async def test_worker_clears_parts_cache_after_success(tmp_path) -> None:
+    """解析成功后段级缓存应被清理（合并结果已落盘，不再需要分段中间产物）。"""
+    parser = FakeParser()
+    worker, _, _, doc = await _make_worker(tmp_path, parser)
+    parts_cache = tmp_path / "parsed" / f"{doc.id}.parts"
+
+    await worker._process_one(doc.id)
+
+    assert parser.cache_dirs == [parts_cache]
+    assert not parts_cache.exists()
+
+
+async def test_worker_keeps_parts_cache_when_parse_fails(tmp_path) -> None:
+    """重试耗尽仍失败时保留段级缓存，便于后续只补跑失败段。"""
+    parser = FakeParser(failures=99)
+    worker, documents, jobs, doc = await _make_worker(tmp_path, parser, max_retries=1)
+    parts_cache = tmp_path / "parsed" / f"{doc.id}.parts"
+
+    await worker._process_one(doc.id)
+
+    updated = await documents.get(doc.id)
+    assert updated.status == DocumentStatus.FAILED
+    assert parts_cache.is_dir()

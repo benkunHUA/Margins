@@ -131,3 +131,53 @@ async def test_short_pdf_still_uses_single_extract_without_pages(tmp_path: Path)
     assert len(client.calls) == 1
     assert "pages" not in client.calls[0]
     assert result.markdown.startswith("# 起始页 1")
+
+
+async def test_part_cache_is_reused_without_calling_mineru(tmp_path: Path) -> None:
+    """已成功的段写入缓存：再次解析（重试/重新解析）直接复用，不再消耗额度。"""
+    cache_dir = tmp_path / "out" / "doc.parts"
+    images_dir = tmp_path / "out" / "images"
+    f = tmp_path / "long.pdf"
+    f.write_bytes(_build_pdf(268))
+
+    first_client = FakePagingClient()
+    await MineruOnlineParser(_config(), client=first_client).parse(
+        f, file_type="pdf", images_dir=images_dir, cache_dir=cache_dir
+    )
+
+    assert len(first_client.calls) == 2
+    assert (cache_dir / "part-1-200.json").is_file()
+    assert (cache_dir / "images" / "p0001-img-0.png").is_file()
+
+    class NeverCallClient(FakePagingClient):
+        def extract(self, source: str, **kwargs) -> dict:
+            raise AssertionError("命中段级缓存时不应再调用 MinerU")
+
+    result = await MineruOnlineParser(_config(), client=NeverCallClient()).parse(
+        f, file_type="pdf", images_dir=images_dir, cache_dir=cache_dir
+    )
+
+    assert result.meta["part_count"] == 2
+    assert result.meta["pages_range"] == "1-200,201-268"
+    assert "![](images/p0001-img-0.png)" in result.markdown
+    assert "![](images/p0201-img-0.png)" in result.markdown
+    # 缓存里的图片会复制回 images_dir，供图片文字总结使用
+    assert result.images == [images_dir / "p0001-img-0.png", images_dir / "p0201-img-0.png"]
+    assert (images_dir / "p0201-img-0.png").read_bytes() == b"\x89PNG-image-data"
+
+
+async def test_corrupted_cache_entry_falls_back_to_mineru(tmp_path: Path) -> None:
+    cache_dir = tmp_path / "out" / "doc.parts"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "part-1-200.json").write_text("{ 不是合法 JSON", encoding="utf-8")
+    f = tmp_path / "long.pdf"
+    f.write_bytes(_build_pdf(268))
+    client = FakePagingClient()
+
+    result = await MineruOnlineParser(_config(), client=client).parse(
+        f, file_type="pdf", cache_dir=cache_dir
+    )
+
+    assert len(client.calls) == 2  # 两段都重新解析
+    assert result.meta["part_count"] == 2
+    assert (cache_dir / "part-1-200.json").is_file()  # 缓存被重写

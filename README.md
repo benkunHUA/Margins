@@ -73,6 +73,7 @@ docker compose up --build
 | `RERANK_MODEL` | 默认 `qwen3-rerank` |
 | `MINERU_API_TOKEN` | MinerU 在线解析 Token（[获取](https://mineru.net/apiManage/token)） |
 | `PARSER_MAX_PAGES_PER_CALL` | 单次 MinerU extract 最大页数，默认 `200`；超出自动分段解析并合并 |
+| `PARSER_PART_RETRY_ATTEMPTS` | 每个页段的段内重试次数，默认 `2`（瞬时失败只重试该段） |
 | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | OpenAI 兼容 LLM 配置，默认 DeepSeek |
 | `DATA_DIR` | 数据目录（SQLite 业务库与索引、上传文件、解析结果） |
 | `INDEX_BACKEND` | 索引后端，默认 `sqlite`（FTS5 + sqlite-vec 同库） |
@@ -112,6 +113,23 @@ docker compose up --build
 > （或至少 `data/faiss_index` 与旧 chunks 数据）后重新上传文档。
 > 若改了 `EMBEDDING_DIMENSION`，`chunk_vectors` 维度不一致会直接报错，同样需要清空重建。
 - 后端容器带 healthcheck，前端等后端健康后才启动；SSE 流式已关闭 nginx 缓冲
+
+## 超长 PDF 分段解析
+
+MinerU 在线服务对单次 `extract` 请求有 200 页上限。页数超过 `PARSER_MAX_PAGES_PER_CALL`
+（默认 200）的 PDF 会**自动按页范围分段解析再合并**，无需手动切分文件：
+
+1. 用 pypdf 数出总页数，按 `1-200`、`201-400`… 逐段串行调用 `extract(pages=…)`；
+2. 每段落盘图片时加段前缀（`p0001-…`/`p0201-…`）并同步改写 markdown 里的引用，
+   避免跨段重名互相覆盖，图片文字总结按文件名匹配因此不受影响；
+3. markdown 按段顺序拼接，`meta.parts` 记录每段的页范围/任务 id/字数/图片数；
+4. 单个页段失败先做段内重试（`PARSER_PART_RETRY_ATTEMPTS`，默认 2 次，只重试该段）；
+5. 已成功的段写入段级缓存 `data/parsed/<doc_id>.parts/`，队列重试或手动「重新解析」
+   时直接复用，不会重跑先前成功的 200 页；解析成功后缓存自动清理，最终失败则保留，
+   便于下次只补跑失败段。
+
+日志中每段输出一条 `event=parse_part`（命中缓存为 `parse_part_cached`），合并后输出
+`event=parse_parts_merged`，便于确认分段与复用情况。
 
 ## 数据库迁移（Alembic）
 
