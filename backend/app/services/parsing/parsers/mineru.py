@@ -1,18 +1,23 @@
-"""MinerU 在线解析（大小/页数路由 + extract/flash 升级）。"""
+"""MinerU 在线解析（大小/页数路由 + extract/flash 升级 + 超长 PDF 分段合并）。"""
 
 import asyncio
+import time
 from pathlib import Path
 from typing import Any
 
 from mineru import MinerU
 
 from app.core.config import ParserConfig
+from app.core.logging import get_logger
+from app.services.image_enrichment import rename_image_refs
 from app.services.parsing.base import DocumentParser, ParsedDocument
+
+logger = get_logger(__name__)
 
 
 class MineruOnlineParser(DocumentParser):
     """按大小与页数路由：PDF 页数 ≤flash_max_pages 且大小 ≤flash_max_size_mb 走 flash，
-    否则走 extract。"""
+    否则走 extract；extract 单次超过 max_pages_per_call 时按页范围分段解析后合并。"""
 
     def __init__(self, config: ParserConfig, client: MinerU | None = None) -> None:
         self._config = config
@@ -35,16 +40,130 @@ class MineruOnlineParser(DocumentParser):
         source = str(file_path)
         if not force_extract and _should_use_flash(size_mb, pages, self._config):
             result = await asyncio.to_thread(self._client.flash_extract, source)
-        else:
-            result = await asyncio.to_thread(self._client.extract, source)
+            return await self._single_result(file_path, result, images_dir)
 
+        if pages is not None and pages > self._config.max_pages_per_call:
+            return await self._parse_in_parts(file_path, pages, images_dir)
+
+        result = await asyncio.to_thread(self._client.extract, source)
+        return await self._single_result(file_path, result, images_dir)
+
+    async def _single_result(
+        self,
+        file_path: Path,
+        result,
+        images_dir: Path | None,
+    ) -> ParsedDocument:
+        """单次调用的结果校验与图片落盘（flash 与 ≤200 页 extract 共用）。"""
         markdown = _markdown(result)
         if _state(result) == "done" and markdown:
             images: list[Path] = []
             if images_dir is not None:
-                images = await asyncio.to_thread(_persist_images, result, images_dir)
+                images, _ = await asyncio.to_thread(_persist_images, result, images_dir)
             return ParsedDocument(markdown=markdown, images=images, meta=_meta(result))
         raise ValueError(_failure_message(file_path, result))
+
+    async def _parse_in_parts(
+        self,
+        file_path: Path,
+        pages: int,
+        images_dir: Path | None,
+    ) -> ParsedDocument:
+        """超长 PDF：按页范围串行解析，合并 markdown / 图片 / meta。"""
+        source = str(file_path)
+        ranges = _page_ranges(pages, self._config.max_pages_per_call)
+        total_parts = len(ranges)
+        markdowns: list[str] = []
+        images: list[Path] = []
+        parts_meta: list[dict[str, Any]] = []
+
+        for index, page_range in enumerate(ranges, start=1):
+            started = time.perf_counter()
+            result = await asyncio.to_thread(self._client.extract, source, pages=page_range)
+            part_markdown = _markdown(result)
+            if _state(result) != "done" or not part_markdown:
+                raise ValueError(
+                    _failure_message(
+                        file_path,
+                        result,
+                        part_note=f"第 {index}/{total_parts} 段 {page_range} 页",
+                    )
+                )
+
+            start_page = int(page_range.split("-", 1)[0])
+            part_images: list[Path] = []
+            if images_dir is not None:
+                part_images, rename = await asyncio.to_thread(
+                    _persist_images, result, images_dir, f"p{start_page:04d}-"
+                )
+                part_markdown = rename_image_refs(part_markdown, rename)
+
+            markdowns.append(part_markdown)
+            images.extend(part_images)
+            parts_meta.append(
+                {
+                    "index": index,
+                    "pages": page_range,
+                    "task_id": _field(result, "task_id", ""),
+                    "markdown_chars": len(part_markdown),
+                    "image_count": len(part_images),
+                }
+            )
+            logger.info(
+                "MinerU 分段解析完成",
+                extra={
+                    "extra_fields": {
+                        "event": "parse_part",
+                        "file": file_path.name,
+                        "part": index,
+                        "total_parts": total_parts,
+                        "pages": page_range,
+                        "state": _state(result),
+                        "image_count": len(part_images),
+                        "duration_ms": round((time.perf_counter() - started) * 1000, 1),
+                    }
+                },
+            )
+
+        merged = "\n\n".join(markdowns)
+        logger.info(
+            "MinerU 分段解析合并完成",
+            extra={
+                "extra_fields": {
+                    "event": "parse_parts_merged",
+                    "file": file_path.name,
+                    "part_count": total_parts,
+                    "total_pages": pages,
+                    "markdown_chars": len(merged),
+                    "image_count": len(images),
+                }
+            },
+        )
+        return ParsedDocument(
+            markdown=merged,
+            images=images,
+            meta={
+                "parts": parts_meta,
+                "part_count": total_parts,
+                "total_pages": pages,
+                "pages_range": ",".join(ranges),
+            },
+        )
+
+
+def _page_ranges(total_pages: int, page_size: int) -> list[str]:
+    """把 1..total_pages 切成每段不超过 page_size 页的页范围串。
+
+    例：``_page_ranges(268, 200) == ["1-200", "201-268"]``。
+    """
+    size = max(1, page_size)
+    ranges: list[str] = []
+    start = 1
+    while start <= total_pages:
+        end = min(start + size - 1, total_pages)
+        ranges.append(f"{start}-{end}")
+        start = end + 1
+    return ranges
 
 
 def _should_use_flash(size_mb: float, pages: int | None, config: ParserConfig) -> bool:
@@ -87,22 +206,33 @@ def _meta(result) -> dict[str, Any]:
     return {}
 
 
-def _persist_images(result, images_dir: Path) -> list[Path]:
-    """把 extract 结果里的图片字节落盘，返回保存后的路径列表。"""
+def _persist_images(
+    result,
+    images_dir: Path,
+    prefix: str = "",
+) -> tuple[list[Path], dict[str, str]]:
+    """把 extract 结果里的图片字节落盘。
+
+    ``prefix`` 用于超长 PDF 分段解析：每段是独立任务，图片名会重复，
+    加段前缀避免互相覆盖；返回（落盘路径，原名 -> 落盘名 映射）。
+    """
     images_dir.mkdir(parents=True, exist_ok=True)
     saved: list[Path] = []
+    rename: dict[str, str] = {}
     for image in _field(result, "images") or []:
         name = Path(str(_field(image, "name", ""))).name
         data = _field(image, "data")
         if not name or not isinstance(data, bytes):
             continue
-        target = images_dir / name
+        new_name = f"{prefix}{name}"
+        target = images_dir / new_name
         target.write_bytes(data)
         saved.append(target)
-    return saved
+        rename[name] = new_name
+    return saved, rename
 
 
-def _failure_message(file_path: Path, result) -> str:
+def _failure_message(file_path: Path, result, part_note: str = "") -> str:
     state = _state(result)
     err_code = _field(result, "err_code", "") or ""
     error = _field(result, "error") or ""
@@ -110,8 +240,9 @@ def _failure_message(file_path: Path, result) -> str:
     detail = (
         f"state={state}, err_code={err_code}, error={error}" if has_error else "结果为空"
     )
+    where = f" [{part_note}]" if part_note else ""
     hint = ""
     low = f"{err_code} {error}".lower()
     if any(keyword in low for keyword in ("auth", "token", "api key", "apikey", "401", "403")):
         hint = "（请检查 .env 中的 MINERU_API_TOKEN）"
-    return f"MinerU 解析失败: {file_path.name} [{detail}]{hint}"
+    return f"MinerU 解析失败: {file_path.name}{where} [{detail}]{hint}"

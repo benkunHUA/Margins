@@ -1,0 +1,109 @@
+"""超长 PDF 分段解析测试（fake client + 合成 PDF，不触网）。"""
+
+from pathlib import Path
+
+import pytest
+
+from app.core.config import ParserConfig
+from app.services.parsing.parsers.mineru import MineruOnlineParser, _page_ranges
+from tests.unit.test_parsing import _build_pdf
+
+
+class FakePagingClient:
+    """按 ``pages`` 参数返回带页码标记的 markdown，并记录每次调用参数。"""
+
+    def __init__(self, fail_pages: str | None = None) -> None:
+        self.calls: list[dict] = []
+        self.fail_pages = fail_pages
+
+    def extract(self, source: str, **kwargs) -> dict:
+        self.calls.append({"source": source, **kwargs})
+        pages = kwargs.get("pages")
+        if pages is not None and pages == self.fail_pages:
+            return {"state": "failed", "err_code": "", "error": "boom", "markdown": None}
+        start = (pages or "1").split("-")[0]
+        return {
+            "markdown": f"# 起始页 {start}\n\n![](images/img-0.png)",
+            "state": "done",
+            "task_id": f"task-{start}",
+            "images": [{"name": "img-0.png", "data": b"\x89PNG-image-data"}],
+        }
+
+    def flash_extract(self, source: str, **kwargs) -> dict:
+        raise AssertionError("超长 PDF 不应走 flash 通道")
+
+
+def _config(**overrides) -> ParserConfig:
+    return ParserConfig(mineru_api_token="t", **overrides)
+
+
+def test_page_ranges_splits_at_boundaries() -> None:
+    assert _page_ranges(200, 200) == ["1-200"]
+    assert _page_ranges(201, 200) == ["1-200", "201-201"]
+    assert _page_ranges(268, 200) == ["1-200", "201-268"]
+    assert _page_ranges(400, 200) == ["1-200", "201-400"]
+    assert _page_ranges(401, 200) == ["1-200", "201-400", "401-401"]
+
+
+async def test_long_pdf_is_parsed_in_pages_and_merged(tmp_path: Path) -> None:
+    client = FakePagingClient()
+    parser = MineruOnlineParser(_config(), client=client)
+    f = tmp_path / "long.pdf"
+    f.write_bytes(_build_pdf(268))
+    images_dir = tmp_path / "out" / "images"
+
+    result = await parser.parse(f, file_type="pdf", images_dir=images_dir)
+
+    assert [call["pages"] for call in client.calls] == ["1-200", "201-268"]
+    assert result.markdown.startswith("# 起始页 1")
+    assert "# 起始页 201" in result.markdown
+    assert result.markdown.index("起始页 1") < result.markdown.index("起始页 201")
+    # 图片按段加前缀落盘，引用同步改写，跨段不覆盖
+    assert result.images == [images_dir / "p0001-img-0.png", images_dir / "p0201-img-0.png"]
+    assert (images_dir / "p0001-img-0.png").read_bytes() == b"\x89PNG-image-data"
+    assert "![](images/p0001-img-0.png)" in result.markdown
+    assert "![](images/p0201-img-0.png)" in result.markdown
+    # meta 记录每段信息，便于排查
+    assert result.meta["part_count"] == 2
+    assert result.meta["total_pages"] == 268
+    assert result.meta["pages_range"] == "1-200,201-268"
+    assert [part["pages"] for part in result.meta["parts"]] == ["1-200", "201-268"]
+    assert result.meta["parts"][0]["task_id"] == "task-1"
+
+
+async def test_part_failure_reports_part_number_and_pages(tmp_path: Path) -> None:
+    client = FakePagingClient(fail_pages="201-268")
+    parser = MineruOnlineParser(_config(), client=client)
+    f = tmp_path / "long.pdf"
+    f.write_bytes(_build_pdf(268))
+
+    with pytest.raises(ValueError) as excinfo:
+        await parser.parse(f, file_type="pdf")
+
+    message = str(excinfo.value)
+    assert "第 2/2 段 201-268 页" in message
+    assert "boom" in message
+
+
+async def test_custom_part_size_splits_into_three(tmp_path: Path) -> None:
+    client = FakePagingClient()
+    parser = MineruOnlineParser(_config(max_pages_per_call=100), client=client)
+    f = tmp_path / "long.pdf"
+    f.write_bytes(_build_pdf(268))
+
+    await parser.parse(f, file_type="pdf")
+
+    assert [call["pages"] for call in client.calls] == ["1-100", "101-200", "201-268"]
+
+
+async def test_short_pdf_still_uses_single_extract_without_pages(tmp_path: Path) -> None:
+    client = FakePagingClient()
+    parser = MineruOnlineParser(_config(), client=client)
+    f = tmp_path / "short.pdf"
+    f.write_bytes(_build_pdf(30))  # > flash_max_pages(20) 且 ≤ 200 -> 单次 extract
+
+    result = await parser.parse(f, file_type="pdf")
+
+    assert len(client.calls) == 1
+    assert "pages" not in client.calls[0]
+    assert result.markdown.startswith("# 起始页 1")
