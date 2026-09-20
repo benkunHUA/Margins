@@ -207,3 +207,22 @@ export interface EvalRunItem {
   citations: Citation[];
   diagnostics: Record<string, number>;
 }
+
+export interface ChunkContextItem {
+  chunk_id: string;
+  chunk_index: number;
+  heading_path: string | null;
+  content: string;
+  is_focus: boolean;
+}
+
+export interface ChunkContext {
+  chunk_id: string;
+  document_id: string;
+  doc_title: string;
+  heading_path: string | null;
+  chunk_index: number;
+  chunk_total: number;
+  radius: number;
+  items: ChunkContextItem[];
+}
