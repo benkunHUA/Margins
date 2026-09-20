@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { FileText } from "lucide-react";
 
+import ChunkContextDialog from "@/components/ChunkContextDialog";
 import type { Citation } from "@/types";
 
 interface CitationCardProps {
@@ -8,17 +10,29 @@ interface CitationCardProps {
 }
 
 export default function CitationCard({ index, citation }: CitationCardProps) {
+  const [previewOpen, setPreviewOpen] = useState(false);
+
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3 text-xs">
-      <div className="flex items-center gap-1.5 font-medium text-slate-700">
-        <span className="flex size-4 items-center justify-center rounded bg-slate-900 text-[10px] text-white">
-          {index}
-        </span>
-        <FileText className="size-3.5 text-slate-400" />
-        {citation.doc_title}
-      </div>
-      {citation.heading_path && <p className="mt-1 text-slate-400">{citation.heading_path}</p>}
-      <p className="mt-1 line-clamp-3 text-slate-500">{citation.snippet}</p>
-    </div>
+    <>
+      <button
+        type="button"
+        onClick={() => setPreviewOpen(true)}
+        title="点击查看引用上下文"
+        className="w-full rounded-lg border border-slate-200 bg-white p-3 text-left text-xs transition hover:border-slate-300 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:outline-none"
+      >
+        <div className="flex items-center gap-1.5 font-medium text-slate-700">
+          <span className="flex size-4 items-center justify-center rounded bg-slate-900 text-[10px] text-white">
+            {index}
+          </span>
+          <FileText className="size-3.5 text-slate-400" />
+          {citation.doc_title}
+        </div>
+        {citation.heading_path && <p className="mt-1 text-slate-400">{citation.heading_path}</p>}
+        <p className="mt-1 line-clamp-3 text-slate-500">{citation.snippet}</p>
+      </button>
+      {previewOpen && (
+        <ChunkContextDialog citation={citation} onClose={() => setPreviewOpen(false)} />
+      )}
+    </>
   );
 }
