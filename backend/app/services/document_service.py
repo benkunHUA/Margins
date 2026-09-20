@@ -15,11 +15,19 @@ from fastapi import UploadFile
 from app.core.config import Settings
 from app.core.constants import MAX_FILE_SIZE_BYTES, SUPPORTED_FILE_TYPES
 from app.core.exceptions import (
+    ChunkNotFoundError,
     DocumentNotFoundError,
     FileTooLargeError,
     InvalidFileTypeError,
 )
-from app.domain.entities import Chunk, Document, Page, ParseJob
+from app.domain.entities import (
+    Chunk,
+    ChunkContext,
+    ChunkContextItem,
+    Document,
+    Page,
+    ParseJob,
+)
 from app.domain.enums import DocumentStatus, ParseMode
 from app.index.writer import IndexWriter
 from app.repositories.base import (
@@ -115,6 +123,47 @@ class DocumentService:
     async def list_chunks(self, doc_id: UUID) -> list[Chunk]:
         await self.get(doc_id)
         return await self._chunks.list_by_document(doc_id)
+
+    async def get_chunk_context(self, chunk_id: UUID, *, radius: int = 1) -> ChunkContext:
+        """取某个 chunk 及其前后邻居，供引用弹框预览。"""
+        found = await self._chunks.get_many([chunk_id])
+        if not found:
+            raise ChunkNotFoundError(f"分块不存在: {chunk_id}")
+        focus = found[0]
+
+        doc = await self._documents.get(focus.document_id)
+        doc_title = doc.filename if doc is not None else str(focus.document_id)
+
+        # list_by_document 已按 chunk_index 升序（SQL 实现显式 order_by）
+        siblings = await self._chunks.list_by_document(focus.document_id)
+        position = next(
+            (index for index, chunk in enumerate(siblings) if chunk.id == focus.id),
+            None,
+        )
+        if position is None:
+            window = [focus]  # 兜底：理论上不会发生
+        else:
+            window = siblings[max(0, position - radius) : position + radius + 1]
+
+        return ChunkContext(
+            chunk_id=focus.id,
+            document_id=focus.document_id,
+            doc_title=doc_title,
+            heading_path=focus.heading_path,
+            chunk_index=focus.chunk_index,
+            chunk_total=len(siblings),
+            radius=radius,
+            items=[
+                ChunkContextItem(
+                    chunk_id=chunk.id,
+                    chunk_index=chunk.chunk_index,
+                    heading_path=chunk.heading_path,
+                    content=chunk.content,
+                    is_focus=chunk.id == focus.id,
+                )
+                for chunk in window
+            ],
+        )
 
     async def delete(self, doc_id: UUID) -> None:
         doc = await self.get(doc_id)

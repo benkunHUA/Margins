@@ -232,3 +232,26 @@ class EvalRunItem(BaseModel):
     durations: dict[str, float] = Field(default_factory=dict)
     diagnostics: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=_now)
+
+
+class ChunkContextItem(BaseModel):
+    """引用预览中的单个 chunk（聚焦块或它的邻居）。"""
+
+    chunk_id: UUID
+    chunk_index: int
+    heading_path: str | None = None
+    content: str
+    is_focus: bool = False
+
+
+class ChunkContext(BaseModel):
+    """引用预览：聚焦 chunk 的位置信息 + 上下文窗口。"""
+
+    chunk_id: UUID
+    document_id: UUID
+    doc_title: str
+    heading_path: str | None = None
+    chunk_index: int
+    chunk_total: int
+    radius: int
+    items: list[ChunkContextItem]

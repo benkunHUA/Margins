@@ -20,6 +20,11 @@ class DocumentNotFoundError(AppError):
     status_code = 404
 
 
+class ChunkNotFoundError(AppError):
+    code = "CHUNK_NOT_FOUND"
+    status_code = 404
+
+
 class SessionNotFoundError(AppError):
     code = "SESSION_NOT_FOUND"
     status_code = 404
